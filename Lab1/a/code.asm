@@ -1,25 +1,25 @@
 ;unsigned int a, b;
 ;void main(void){
-;   while(a!=b){
-;      if(a>b){
-;       a=a-b;
-;      else
-;         b=b-a;
-;      }
-;   }
+; while(a!=b){
+; if(a>b){
+; a=a-b;
+; else
+; b=b-a;
+; }
+; }
 ;}
 
 .include "m64def.inc"
-.def a_high =r16 
+.def a_high =r16
 .def a_low =r17
 .def b_high =r18
 .def b_low =r19
 
 ; Theoretically it should look like
 ; 0000 0001 0000 0010
-; which represents 257 
-ldi a_high, high (6969)
-ldi a_low, low (6969)
+; which represents 257
+ldi a_high, high (65500)
+ldi a_low, low (65500)
 
 ; Theoretically it should look like
 ; 0000 0001 0000 0001
@@ -33,7 +33,7 @@ breq while_end ; CHECK FOR EQUALITY
 
    cp a_low, b_low
    cpc a_high, b_high
-      brlt skip_if ; if A < B, this loop happens
+      brsh skip_if ; if A < B, this loop happens
       sub b_low, a_low
       sbc b_high, a_high
       jmp skip_else
