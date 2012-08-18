@@ -1,11 +1,10 @@
-<<<<<<< HEAD
 ; INSERT ASSEMBLY AWESOMENESS HERE
 
 ; powering.
 ; x^3 = x * x * x
 ; the term must be 1 Byte as defined in Q...
 ; 
-=======
+
 .equ CONST_x = 8
 .equ CONST_n = 4
 
@@ -31,6 +30,7 @@
 ; ############# M  A  C  R  O  S  T  Y  L  E  ###################
 ; ###############################################################
 ; ###############################################################
+
 .macro power
 
 ; ###############################################################
@@ -113,4 +113,3 @@ skip_for2 :
 
 
 endloop: jmp endloop
->>>>>>> fa1d26878af2f46613fae27b6ecbc19936b7f691
