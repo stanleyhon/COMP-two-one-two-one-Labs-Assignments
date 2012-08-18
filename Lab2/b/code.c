@@ -4,8 +4,9 @@
 unsigned int power (int number, int power);
 
 int main (void) {
-   unsigned int n = 10;
-	unsigned int x = 3;
+
+   unsigned int n = 4;
+	unsigned int x = 8;
    unsigned int i = 0;
    unsigned int sum = 0;
    unsigned int result;
@@ -17,6 +18,7 @@ int main (void) {
    for (i = 0; i < n; i++) {
       a[i] = i; // stores an incrementing number into a[i]...
       result = power (x, i); // powers x^i, 3 to different levels
+      printf ("result is [%d]\n", result);
       sum += result * a[i]; // mulitplies the constant term of the polynomial 
                             // (e.g. i * 3^i)
    }
