@@ -1,4 +1,3 @@
-;.def var = r15
 ;.def var = r16
 ;.def var = r17
 ;.def var = r18
