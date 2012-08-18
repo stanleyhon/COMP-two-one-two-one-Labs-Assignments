@@ -28,7 +28,7 @@ ldi r27, high(testArray)
 
 ; This macro writes array values to SRAM
 .macro writeToArray
-  ldi r16, low(@0)
+	ldi r16, low(@0)
 	ldi r17, high(@0)
 	st X+, r16
 	st X+, r17
@@ -77,3 +77,12 @@ swapArrayIndexes:
 
    out SPH, r29
    out SPL, r28
+   ; Where do I store my parameters??
+   
+   ; STORE PARAMETERS
+
+   ; grab the location of the low point of the array
+   ldi r28, low(testArray)
+   ldi r29, high(testArray)
+
+   sbiw r28, ;the first parameter
