@@ -37,6 +37,69 @@ ldi r27, high(testArray)
 	clr r17
 .endmacro
 
+.macro gotoIndex ;@0 Register @1 increment Z
+   ldi counter, 0
+   ; Go forward "parameter" indexes
+   find_parameter_index :
+   cp counter, @0 ; pre-condition guard
+   breq find_parameter_index_skip
+      adiw r26, 2 ; increment the poiner
+      
+      push counter
+      ldi temp, @1
+      cpi temp, 1
+	  brne skipIncrementZ
+         adiw r30, 2
+	  skipIncrementZ :
+      pop counter
+	  ldi r25, 69
+
+	  inc counter
+	  jmp find_parameter_index
+   find_parameter_index_skip :
+.endmacro
+
+.macro pushPointers ;@0 X @1 Y @3 Z
+   ldi temp, 1
+   cpi temp, @0
+   brne skipIncrementX
+      push r26
+      push r27
+   skipIncrementX :
+   
+   cpi temp, @1
+   brne skipincrementY
+      push r28
+      push r29
+   skipincrementY :
+
+   cpi temp, @2
+   brne skipIncrementZ
+      push r30
+      push r31      
+   skipIncrementZ :
+.endmacro
+
+.macro popPointers ;@0 X @1 Y @3 Z
+   ldi temp, 1
+   cpi temp, @0
+   brne skipIncrementX
+      pop r26
+      pop r27
+   skipIncrementX :
+   
+   cpi temp, @1
+   brne skipincrementY
+      pop r28
+      pop r29
+   skipincrementY :
+
+   cpi temp, @2
+   brne skipIncrementZ
+      pop r30
+      pop r31      
+   skipIncrementZ :
+.endmacro
 
 ; Fill the array
 ; int test[10] = {100, 209, -725, -200, 500, 301, 60, -400,100, 80};
@@ -57,6 +120,9 @@ main:
    out SPH, r29
    out SPL, r28
    clr r0
+   ldi r16, 0
+   ldi r17, 1
+   rcall swapArrayIndexes
 
 
 loop: nop
@@ -65,18 +131,13 @@ loop: nop
 ; This function swaps the two array indexes
 ; Frame Contents:
 ; Y+1,Y+2 - array[parameter1]
-; Y+3,Y+3 - array[parameter2]
+; Y+3,Y+4 - array[parameter2]
 ; Frame size:
 ; 2 bytes to save X
 ; 2 bytes to save Y
 ; 2 bytes to save Z
 swapArrayIndexes:
-   push r28 ; Save SPL (Y low)
-   push r29 ; Save SPH (Y high)
-   push r26 ; Save X low
-   push r27 ; Save X high
-   push r30 ; Save Y low
-   push r31 ; Save Y high
+   pushPointers 1, 1, 1
    in r28, SPL ; Grab the new stack low address
    in r29, SPH ; Grab the new stack high address
    sbiw r28, 10 
@@ -90,16 +151,7 @@ swapArrayIndexes:
    ldi r30, low(testArray)
    ldi r31, high(testArray)
 
-   ldi counter, 0
-   ; Go forward "parameter1" indexes
-   find_parameter1_index :
-   cp counter, parameter1 ; pre-condition guard
-   brlt find_parameter1_index_skip
-      adiw r26, 1 ; increment the poiner
-	  adiw r30, 1 ; Also increment Z pointer so we can find this again later.
-	  inc counter
-	  jmp find_parameter1_index
-   find_parameter1_index_skip :
+   gotoIndex parameter1, 1
 
    ; X should be pointing at one of our targets
    ; Grab the data out of there
@@ -112,38 +164,34 @@ swapArrayIndexes:
    ldi r26, low(testArray)
    ldi r27, high(testArray)
    
-   ldi counter, 0
-   ; Go forward "parameter2" indexes
-   find_parameter2_index :
-   cp counter, parameter2 ; pre-condition guard
-   brlt find_parameter2_index_skip
-      adiw r26, 1 ; increment the poiner
-	  inc counter
-	  jmp find_parameter2_index
-   find_parameter2_index_skip :
+   gotoIndex parameter2, 0
 
    ; X should be pointing at our other target
    ; Grab the data out of there
    ld temp, X+ ; Grab the low byte
    std Y+3, temp ; Write to Y+3
-   ld temp, X- ; setting pointer back 1, ready to write in other value
+   ld temp, X ; setting pointer back 1, ready to write in other value
    std Y+4, temp ; Write to Y+4
 
+   sbiw r26, 1
+
    ; Write the replacement info in from Y+1, Y+2 to parameter2's index
-   ld temp, Y+1 ; Grab low byte data from Y+1
+   ldd temp, Y+1 ; Grab low byte data from Y+1
    st X+, temp ; Write it to X
-   ld temp, Y+2 ; Grab high byte data from Y+2
+   ldd temp, Y+2 ; Grab high byte data from Y+2
    st X+, temp ; Write it to X
 
    ; Write the replacement info in from Y+3, Y+4 to parameter1's index
-   ldi temp, Y+3 ; Grab low byte data from Y+3
+   ldd temp, Y+3 ; Grab low byte data from Y+3
    st Z+, temp ; Write it to the place we remembered in pointer Z 
                ; (refer to first loop that searches for the index)
-   ldi temp, Y+4 ; Grab high byte data from Y+4
+   ldd temp, Y+4 ; Grab high byte data from Y+4
    st Z+, temp ;
 
-   
+   adiw r28, 10
+   out SPH, r29
+   out SPL, r28
+   popPointers 1, 1, 1
+   ret
 
-   
-   
 
