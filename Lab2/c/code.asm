@@ -1,15 +1,16 @@
 .include "m64def.inc"
 
+.def returnValue = r16
 .def parameter1 = r16
 .def parameter2 = r17
 .def counter = r18
 .def temp = r18
-;.def var = r19
-;.def var = r20
-;.def var = r21
-;.def var = r22
-;.def var = r23
-;.def var = r24
+.def pivot_low = r19
+.def pivot_high = r20
+.def i = r21
+.def j = r22
+.def arrayTemp_low = r23
+.def arrayTemp_high = r24
 ;.def var = r25
 ;.def var = r26 x 
 ;.def var = r27 x
@@ -24,8 +25,7 @@
 testArray: .byte 20 ; 10x 2 byte numbers
 .cseg
 
-ldi r26, low(testArray)
-ldi r27, high(testArray)
+
 
 ; This macro writes array values to SRAM
 .macro writeToArray
@@ -36,6 +36,9 @@ ldi r27, high(testArray)
 	clr r16
 	clr r17
 .endmacro
+
+ldi r26, low(testArray)
+ldi r27, high(testArray)
 
 .macro gotoIndex ;@0 Register @1 increment Z
    ldi counter, 0
@@ -52,7 +55,6 @@ ldi r27, high(testArray)
          adiw r30, 2
 	  skipIncrementZ :
       pop counter
-	  ldi r25, 69
 
 	  inc counter
 	  jmp find_parameter_index
@@ -101,6 +103,17 @@ ldi r27, high(testArray)
    skipIncrementZ :
 .endmacro
 
+.macro readFromArray ; @0 index to read from, @1, @2 registers to put result in
+   ldi r26, low(testArray) ; grab a handle to the array
+   ldi r27, high(testArray)
+
+   gotoIndex @0, 0 ; set X pointer to that index, don't change Z
+   ld temp, X+ ; grab the low byte out
+   mov @1, temp
+   ld temp, X+ ; grab the high byte out
+   mov @2, temp
+.endmacro
+
 ; Fill the array
 ; int test[10] = {100, 209, -725, -200, 500, 301, 60, -400,100, 80};
 writeToArray 100
@@ -120,13 +133,77 @@ main:
    out SPH, r29
    out SPL, r28
    clr r0
-   ldi r16, 0
-   ldi r17, 1
-   rcall swapArrayIndexes
+   ; #Test#: Swaps index 0 with index 9. [pass]
+   ;ldi r16, 0
+   ;ldi r17, 9
+   ;rcall swapArrayIndexes
+   ; #Test#: Reads from index 2 into r24, r25 [pass]
+   ;ldi r16, 2
+   ;readFromArray r16, r24, r25
 
 
 loop: nop
    jmp loop
+
+partition:
+   pushPointers 1, 1, 1
+   in r28, SPL
+   in r29, SPH
+   sbiw r28, 10 
+
+   out SPH, r29
+   out SPL, r28
+
+   ; stores array[parameter1] into pivot
+   readFromArray parameter1, pivot_low, pivot_high 
+   
+   mov i, parameter1
+   
+   mov j, parameter2
+   inc j
+   
+   infinite_loop :
+      inc_i :
+         inc i
+	     readFromArray i, arrayTemp_low, arrayTemp_high ; read array[i] into arrayTemp
+	     cp arrayTemp_low, pivot_low
+	     cpc arrayTemp_high, pivot_high
+	     brpl skip_inc_i ; array[i] <= pivot ; #### SUSPECT COMPARISON ####
+	        cp i, parameter2
+		    brpl skip_inc_i ; i <= r ; #### SUSPECT COMPARISON ####
+		       jmp inc_i
+	  skip_inc_i :
+	  
+	  inc_j :
+	     dec j
+         readFromArray j, arrayTemp_low, arrayTemp_high ; read array[i] into arrayTemp
+         cp arrayTemp_low, pivot_low
+	     cpc arrayTemp_high, pivot_high
+	     brmi skip_inc_j ; #### SUSPECT COMPARISON ####
+         jmp inc_j
+      skip_inc_j :
+
+	  cp i, j
+	  brlo skip_infinite_loop
+
+	  ; swap array[i] and array[j]
+	  mov parameter1, i
+	  mov parameter2, j
+	  rcall swapArrayIndexes 
+
+	  jmp infinite_loop
+   skip_infinite_loop :
+
+   mov parameter1, parameter1
+   mov parameter2, j
+   
+   mov returnValue, j
+
+   adiw r28, 10
+   out SPH, r29
+   out SPL, r28
+   popPointers 1, 1, 1
+   ret
 
 ; This function swaps the two array indexes
 ; Frame Contents:
