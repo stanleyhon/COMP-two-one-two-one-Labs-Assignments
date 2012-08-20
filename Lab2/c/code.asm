@@ -11,7 +11,7 @@
 .def j = r22
 .def arrayTemp_low = r23
 .def arrayTemp_high = r24
-;.def var = r25
+.def p = r25
 ;.def var = r26 x 
 ;.def var = r27 x
 ;.def var = r28 y 
@@ -140,20 +140,26 @@ main:
    ; #Test#: Reads from index 2 into r24, r25 [pass]
    ;ldi r16, 2
    ;readFromArray r16, r24, r25
+   ; #Test#: Partition behaviour test
+   ldi parameter1, 0
+   ldi parameter2, 9
+   rcall partition
+   ldi r21, 69
 
-
-loop: nop
+   loop: nop
    jmp loop
 
 partition:
    pushPointers 1, 1, 1
+   
    in r28, SPL
    in r29, SPH
-   sbiw r28, 10 
+   sbiw r28, 20 
 
    out SPH, r29
    out SPL, r28
 
+   mov p, parameter1
    ; stores array[parameter1] into pivot
    readFromArray parameter1, pivot_low, pivot_high 
    
@@ -166,40 +172,42 @@ partition:
       inc_i :
          inc i
 	     readFromArray i, arrayTemp_low, arrayTemp_high ; read array[i] into arrayTemp
-	     cp arrayTemp_low, pivot_low
-	     cpc arrayTemp_high, pivot_high
-	     brpl skip_inc_i ; array[i] <= pivot ; #### SUSPECT COMPARISON ####
-	        cp i, parameter2
-		    brpl skip_inc_i ; i <= r ; #### SUSPECT COMPARISON ####
+	     cp pivot_low, arrayTemp_low
+	     cpc pivot_high, arrayTemp_high
+	     brlt skip_inc_i ; array[i] <= pivot ; #### SUSPECT COMPARISON ####
+	        cp parameter2, i
+		    brlt skip_inc_i ; i <= r ; #### SUSPECT COMPARISON ####
 		       jmp inc_i
 	  skip_inc_i :
 	  
 	  inc_j :
 	     dec j
          readFromArray j, arrayTemp_low, arrayTemp_high ; read array[i] into arrayTemp
-         cp arrayTemp_low, pivot_low
-	     cpc arrayTemp_high, pivot_high
-	     brmi skip_inc_j ; #### SUSPECT COMPARISON ####
-         jmp inc_j
+         cp pivot_low, arrayTemp_low
+	     cpc pivot_high, arrayTemp_high
+	     brpl skip_inc_j ; #### SUSPECT COMPARISON ####
+            jmp inc_j
       skip_inc_j :
 
 	  cp i, j
-	  brlo skip_infinite_loop
+	  brge skip_infinite_loop
 
 	  ; swap array[i] and array[j]
 	  mov parameter1, i
 	  mov parameter2, j
 	  rcall swapArrayIndexes 
-
 	  jmp infinite_loop
    skip_infinite_loop :
 
-   mov parameter1, parameter1
+   
+   mov parameter1, p
    mov parameter2, j
+
+   rcall swapArrayIndexes
    
    mov returnValue, j
 
-   adiw r28, 10
+   adiw r28, 20
    out SPH, r29
    out SPL, r28
    popPointers 1, 1, 1
@@ -217,7 +225,7 @@ swapArrayIndexes:
    pushPointers 1, 1, 1
    in r28, SPL ; Grab the new stack low address
    in r29, SPH ; Grab the new stack high address
-   sbiw r28, 10 
+   sbiw r28, 10
 
    out SPH, r29
    out SPL, r28
