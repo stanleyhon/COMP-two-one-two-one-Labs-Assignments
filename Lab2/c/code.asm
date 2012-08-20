@@ -84,23 +84,25 @@ ldi r27, high(testArray)
 
 .macro popPointers ;@0 X @1 Y @3 Z
    ldi temp, 1
-   cpi temp, @0
-   brne skipIncrementX
-      pop r26
-      pop r27
-   skipIncrementX :
    
-   cpi temp, @1
-   brne skipincrementY
-      pop r28
-      pop r29
-   skipincrementY :
-
    cpi temp, @2
    brne skipIncrementZ
-      pop r30
-      pop r31      
+      pop r31
+      pop r30      
    skipIncrementZ :
+
+   cpi temp, @1
+   brne skipincrementY
+      pop r29
+      pop r28
+   skipincrementY :
+
+   cpi temp, @0
+   brne skipIncrementX
+      pop r27
+      pop r26
+   skipIncrementX :
+
 .endmacro
 
 .macro readFromArray ; @0 index to read from, @1, @2 registers to put result in
@@ -141,20 +143,79 @@ main:
    ;ldi r16, 2
    ;readFromArray r16, r24, r25
    ; #Test#: Partition behaviour test
+  /*
    ldi parameter1, 0
    ldi parameter2, 9
    rcall partition
-   ldi r21, 69
+   ldi parameter1, 0
+   ldi parameter2, 5
+   rcall partition
+   ldi parameter1, 0
+   ldi parameter2, 2
+   rcall partition
+   ldi parameter1, 0
+   ldi parameter2, 1
+   rcall partition
+   ldi parameter1, 4
+   ldi parameter2, 5
+   rcall partition
+   ldi parameter1, 7
+   ldi parameter2, 9
+   rcall partition
+*/
+   ldi parameter1, 0
+   ldi parameter2,9
+   rcall quicksort
 
    loop: nop
    jmp loop
+
+quicksort:
+   pushPointers 1, 1, 1
+
+   in r28, SPL
+   in r29, SPH
+   sbiw r28, 10
+
+   out SPH, r29
+   out SPL, r28
+
+
+   cp parameter1, parameter2
+   brge skip_sorting ; if p >= r, skip
+   
+      push parameter2 ;stack: r
+	  push parameter1 ;stack: p,r
+	  rcall partition ; return value stored in "returnValue" (r16)
+	  
+	  mov parameter2, returnValue ;set @2
+	  pop parameter1 ;set @1, stack: r
+	  push parameter2 ; push q onto stack, stack: q,r
+      dec parameter2 ; q=q-1
+
+	  rcall quicksort ;quicksort(array,p,q-1)
+
+      pop parameter1 ;set @1, stack: r
+      inc parameter1 ;q=q+1
+
+      pop parameter2 ;set @2, stack: empty     
+
+	  rcall quicksort ; quicksort(array,q+1,r)
+
+   skip_sorting :
+    
+   adiw r28, 10
+   out SPH, r29
+   out SPL, r28
+   popPointers 1, 1, 1
+   ret
 
 partition:
    pushPointers 1, 1, 1
    
    in r28, SPL
    in r29, SPH
-   sbiw r28, 20 
+   sbiw r28, 10
 
    out SPH, r29
    out SPL, r28
@@ -207,7 +268,7 @@ partition:
    
    mov returnValue, j
 
-   adiw r28, 20
+   adiw r28, 10
    out SPH, r29
    out SPL, r28
    popPointers 1, 1, 1
