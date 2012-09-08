@@ -3,8 +3,7 @@
 .def row =r17
 .def col =r18
 .def mask =r19
-
-
+.def count = r20
 
 // ************* LCD COPY ********************
 
@@ -63,7 +62,8 @@ ser temp
 out DDRC, temp ; Make porC all outputs
 out PORTC, temp ; Turn on all the LEDs
 rcall lcd_init
-
+ldi count, 0
+dec count
 ; main keeps scanning the keypad to find which key is pressed.
 main:
 
@@ -100,7 +100,7 @@ inc row ; else move to the next row
 lsl mask ; shift the mask to the next bit
 jmp rowloop
 nextcol:
-cpi col, 3 ; check if we’re on the last column
+cpi col, 3 ; check if weâ€™re on the last column
 breq main ; if so, no buttons were pushed,
 ; so start again.
 sec ; else shift the column mask:
@@ -118,6 +118,17 @@ jmp colloop ; and check the next column
 ; temp.
 
 convert:
+inc count
+cpi count, 16
+brmi skipclear
+
+rcall lcd_init
+
+ldi count, 0
+
+
+skipclear:
+
 cpi col, 3 ; if column is 3 we have a letter
 breq letters
 cpi row, 3 ; if row is 3 we have a symbol or 0
