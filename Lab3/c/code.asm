@@ -1,3 +1,11 @@
+// HOKAY SO
+// WE CONNECT
+// R0-C3 (KEYPAD) to PB0-PB7
+// PD0-PD7 to LCD first 8
+// LCD D7-RS to PA0-PA3
+// PC0-PC7 to LED BAR first 8
+
+
 .include "m64def.inc"
 .def temp =r16
 .def row =r17
