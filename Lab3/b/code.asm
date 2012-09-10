@@ -55,7 +55,7 @@
 ; Hello World! 
 ; 123456789012 
 main: 
-  	ldi temp, low(RAMEND)
+		ldi temp, low(RAMEND)
         out SPL, temp
         ldi temp, high(RAMEND)
         out SPH, temp
@@ -255,7 +255,7 @@ bigdelay:
   push del_lo
   push del_hi
 
-  ldi temp2, 40
+  ldi temp2, 37
   delayloop :
   ldi del_lo, low(50000)
   ldi del_hi, high(50000)
