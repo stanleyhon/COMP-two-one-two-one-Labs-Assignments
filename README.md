@@ -3,6 +3,10 @@ COMP2121-Labs-and-Assignments
 
 ASSEMBLER GUIDELINES:
 
-1. ALL PROGRAMS SHOULD END IN AN INFINITE LOOP SINCE THERE IS NO LOWER LEVEL OS FOR THE HARDWARE TO RUN ON
 
-        
+____________________.____      .___  _________ __________    _____  ________   
+\_   ___ \__    ___/|    |     |   |/   _____/ \______   \  /  _  \ \______ \  
+/    \  \/ |    |   |    |     |   |\_____  \   |    |  _/ /  /_\  \ |    |  \ 
+\     \____|    |   |    |___  |   |/        \  |    |   \/    |    \|    `   \
+ \______  /|____|   |_______ \ |___/_______  /  |______  /\____|__  /_______  /
+        \/                  \/             \/          \/         \/        \/ 
