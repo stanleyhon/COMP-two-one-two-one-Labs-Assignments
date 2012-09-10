@@ -1,11 +1,3 @@
-// HOKAY SO
-// WE CONNECT
-// R0-C3 (KEYPAD) to PB0-PB7
-// PD0-PD7 to LCD first 8
-// LCD D7-RS to PA0-PA3
-// PC0-PC7 to LED BAR first 8
-
-
 .include "m64def.inc"
 .def temp =r16
 .def row =r17
@@ -126,6 +118,7 @@ jmp colloop ; and check the next column
 ; temp.
 
 convert:
+
 inc count
 cpi count, 16
 brmi skipclear
@@ -210,10 +203,53 @@ ldi data, '@'
 
 ldi printflag, 0
 
-rcall smalldelay
+//rcall smalldelay
 ldi temp, '@'
-dontprint:
 
+dontprint:
+ldi mask, INITCOLMASK ; initial column mask
+clr col ; initial column
+colloop2:
+out PORTB, mask ; set column to mask value
+; (sets column 0 off)
+ldi temp, 0xFF ; implement a delay so the
+; hardware can stabilize
+delay2:
+dec temp
+brne delay2
+in temp, PINB ; read PORTD
+andi temp, ROWMASK ; read only the row bits
+cpi temp, 0xF ; check if any rows are grounded
+breq nextcol2 ; if not go to the next column
+ldi mask, INITROWMASK ; initialise row check
+clr row ; initial row
+rowloop2:
+mov temp2, temp
+and temp2, mask ; check masked bit
+brne dontprint ; if the result is non-zero,
+
+inc row ; else move to the next row
+lsl mask ; shift the mask to the next bit
+jmp rowloop2
+nextcol2:
+cpi col, 3 ; check if we’re on the last column
+breq return ; if so, no buttons were pushed,
+; so start again.
+sec ; else shift the column mask:
+; We must set the carry bit
+rol mask ; and then rotate left by a bit,
+; shifting the carry into
+; bit zero. We need this to make
+; sure all the rows have
+; pull-up resistors
+inc col ; increment column value
+jmp colloop2 ; and check the next column
+; convert function converts the row and column given to a
+; binary number and also outputs the value to PORTC.
+; Inputs come from registers row and col and output is in
+; temp.
+
+return:
 ret ; return to caller
 
 
