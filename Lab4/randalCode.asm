@@ -105,6 +105,7 @@ reset:
 	out SPH,YH             ;setting the stack pointers SP high 
 	out SPL,YL             ;setting the stack pointers SP low
 
+/*
 	ldi temp, PORTCDIR ; columns are outputs, rows are inputs
 	out DDRC, temp
 	ser temp
@@ -125,14 +126,17 @@ reset:
 
 	ldi ZL, low(var_motrpm)
 	ldi ZH, high(var_motrpm)
-	
+	  
 	ldi temp, 20
 	st Z, temp ; initial RPM = 20
-
+*/
+/*
 	ldi ZL, low(var_numinterrupts)
 	ldi ZH, high(var_numinterrupts)
 	ldi temp, 0
 	st Z, temp ; set num_interrupts = 0
+*/
+
 
 	; set up PWM and timer registers
 	ldi temp, 0b01101010
@@ -140,16 +144,37 @@ reset:
 	;-Fast PWM (6=1, 3=1)
 	;Set OC0 when upcounting, (5=1,4=1)
 	; prescaling value = 8(2,1,0 = 010)
-	; Prescaling value=8  ;256*8/7.3728( Frequency of the clock 7.3728MHz, for the overflow it should go for 256 times)
+   // prescale value=1 256*1/7.3728, so this takes 36 clocks.~~
+	; Prescaling value=8  ;256*8/7.3728( Frequency of the clock 7.3728MHz, for the overflow it should go for 256 times) 280 clocks = 20~SPM
 	out TCCR0, temp
-	ldi temp, 0xA4 ; 
+	ldi temp, 58//0xA4 ; 
 	out OCR0, temp ;output compare, basically the pulse width in cycles (?)
 
 
 	ldi temp, 1<<TOIE0       ; =278 microseconds
 	out TIMSK, temp          ; T/C0 interrupt enable
 
+// SHIT BELOW THIS LINE
 
+	//push temp
+	//in temp, SREG
+	//push temp
+
+	ser temp
+
+	out DDRB, temp ; PORTB, the data port is usually all otuputs
+	//out DDRA, temp ; PORTA, the control port is always all outputs
+	//ldi temp, (1<<PD4)|(1<<PD5)|(1<<PD6)|(1<<PD7) ; set top half of PORTD as outputs (for LCD)
+	//out DDRD, temp
+
+	//pop temp
+	//out SREG, temp
+	//pop temp
+
+// SHIT ABOVE THIS LINE
+
+
+   chill : rjmp chill
 	rcall lcd_init
 
 main: ; Scan the keypad and act on the key that was pressed. Also updates the main screen.
