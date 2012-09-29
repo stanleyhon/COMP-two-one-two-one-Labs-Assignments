@@ -59,7 +59,7 @@ reset:
 	out SPH,YH             ;setting the stack pointers SP high 
 	out SPL,YL             ;setting the stack pointers SP low
 
-	/*EX_INT0	
+	//EX_INT0	
 	in temp, EIMSK
 	ldi temp, (2<<ISC00)	//Set for falling edge (EXT_INT0)				
 	sts EICRA, temp                       
@@ -67,7 +67,7 @@ reset:
 	in temp, EIMSK                         
 	ori temp, (1<<INT0)		//Enable EXT_INT0   			
 	out EIMSK, temp                       
-	*/
+	
 
 	//Enable global interrupts
 	sei
