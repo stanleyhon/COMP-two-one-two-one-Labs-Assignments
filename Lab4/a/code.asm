@@ -87,10 +87,16 @@ reset:
 	ldi temp, (1<<TOIE0)
 	out TIMSK, temp  
 
+
+	ser temp1
+	out DDRB, temp1 ; PORTB, the data port is usually all otuputs
+
 main: rjmp main
 
 EXT_INT0:
 reti
 
 Timer0:
+	ldi temp, 0 
+	out OCR0, temp
 reti
