@@ -223,14 +223,12 @@ goslower:
 
 
 	in temp, OCR0
+	cpi temp, 68
+	brlo tooSmall 
 	subi temp, 8
-	cpi temp, 60
-	brsh outnow2
-	ldi temp, 61
-	outnow2:
-
-
 	out OCR0, temp
+
+	tooSmall:
 	pop temp
 	out SREG, temp
 	pop temp
@@ -243,7 +241,7 @@ stopMotor:
 
 
 	ldi temp, 0
-	out OCr0, temp
+	out OCR0, temp
 
 	pop temp
 	out SREG, temp
