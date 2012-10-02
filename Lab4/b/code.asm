@@ -103,16 +103,13 @@ out SPH, temp
 ldi temp, PORTDDIR ; columns are outputs, rows are inputs
 out DDRC, temp
 
-// DEBUG FOR TESTING INTERRUPTS WITH LED
-   ldi temp, 255
-   out DDRB, temp
 
 ; INTERRUPTS FOR COUNTING SPINS
 
 // MASTER OF ASSEMBLY (r)
 
 ; enabling interrupt
-ldi temp, (2 << ISC40) 				;setting the interrupts for falling edge
+ldi temp, (3 << ISC40) 				;setting the interrupts for falling edge
 sts EICRB, temp                       ;storing them into EICRB	
 in temp, EIMSK                        ;taking the values inside the EIMSK  
 ori temp, (1<<INT4)      			
@@ -516,6 +513,22 @@ smalldelay:
   pop del_lo
 ret
 
+interruptDelay:
+   push del_lo
+   push del_hi
+
+   ldi temp2, 7
+   delayloop3:
+      ldi del_lo, low(50000)
+      ldi del_hi, high(50000)
+      rcall delayCTL
+      subi temp2, 1
+      brne delayloop3
+
+   pop del_hi
+   pop del_lo
+ret
+
 // interrupt handler
 EXT_INT4:
 	push ZL
@@ -534,12 +547,99 @@ EXT_INT4:
 
    st Z, temp
 
+   ld temp, Z
+   rcall print_unsigned
+
+   // WAIT 2300
+   rcall interruptDelay 
+
    pop temp
    out SREG, temp
    pop temp
    pop ZH
    pop ZL
 reti
+
+print_unsigned:
+	push temp  ; holds the current most significant digit
+	push temp2 ; holds a copy of the original value
+	push mask  ; holds the original value
+
+	mov temp2, temp ; temp2 = value
+	mov mask, temp ; mask = value
+	; == Get 100s ==
+	
+	cpi mask, 100 ; if value < 100, skip
+	brlo skip_hundreds
+
+	clr data ;data = 0
+	ldi temp, 100 ; MSD temp = 100
+
+	hundreds_loop:
+
+	cp temp2, temp ; while temp2 >= 100
+	brlo exit_hundreds
+
+	sub temp2, temp ;temp2 -= temp
+	inc data
+	rjmp hundreds_loop
+	exit_hundreds:
+
+
+	subi data, (-'0')
+    rcall lcd_wait_busy
+	rcall lcd_write_data            ; write the character to the screen
+
+	skip_hundreds:
+
+	; == Get 10s ==
+	cpi mask, 10 ; if data < 10, skip
+	brlo skip_dozens
+
+	ldi temp, 10 ; get 10s
+	clr data ; data = 0
+
+	dozens_loop:
+
+	cp temp2, temp ; while temp2 >= 10
+	brlo exit_dozens
+
+	sub temp2, temp
+	inc data
+
+	rjmp dozens_loop
+	exit_dozens:
+
+
+
+	subi data, (-'0')
+    rcall lcd_wait_busy
+	rcall lcd_write_data            ; write the character to the screen
+
+	skip_dozens:
+	; == Get 1s ==
+	ldi temp, 1 ; get 10s
+	clr data ; data = 0
+	ones_loop:
+	cp temp2, temp ; while temp2 >= 1
+	brlo exit_ones
+
+	sub temp2, temp
+	inc data
+
+	rjmp ones_loop
+	exit_ones:
+
+	subi data, (-'0')
+    rcall lcd_wait_busy
+	rcall lcd_write_data            ; write the character to the screen
+
+
+	pop mask
+	pop temp2
+  	pop temp
+
+ret
 
 
 Timer0:
@@ -571,4 +671,3 @@ Timer0:
 */
 
 reti
-
