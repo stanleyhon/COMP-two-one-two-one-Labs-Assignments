@@ -108,14 +108,20 @@ out DDRC, temp
 
 // MASTER OF ASSEMBLY (r)
 
+
+//3 = CONSTANT INTERRUPTS
+//2 = 
+//1 = 
+
+
 ; enabling interrupt
-ldi temp, (3 << ISC40) 				;setting the interrupts for falling edge
+ldi temp, (1 << ISC40) 				;setting the interrupts for falling edge
 sts EICRB, temp                       ;storing them into EICRB	
 in temp, EIMSK                        ;taking the values inside the EIMSK  
 ori temp, (1<<INT4)      			
 out EIMSK, temp                       ; enabling interrupt4
-ldi temp, 1
-out DDE4, temp
+//ldi temp, 1
+//out DDE4, temp //Set PORTE to out
 
 rcall lcd_init
 ldi count, 0
@@ -142,11 +148,13 @@ main:
 ldi mask, INITCOLMASK ; initial column mask
 clr col ; initial column
 colloop:
+//rcall RPS
 out PORTC, mask ; set column to mask value
 ; (sets column 0 off)
 ldi temp, 0xFF ; implement a delay so the
 ; hardware can stabilize
 delay:
+
 dec temp
 brne delay
 in temp, PINC ; read PORTD
@@ -156,12 +164,12 @@ breq nextcol ; if not go to the next column
 ldi mask, INITROWMASK ; initialise row check
 clr row ; initial row
 rowloop:
+
 mov temp2, temp
 and temp2, mask ; check masked bit
 brne skipconv ; if the result is non-zero,
 ; we need to look again
 rcall convert ; if bit is clear, convert the bitcode
-
 
 
 jmp main ; and start again
@@ -485,7 +493,7 @@ bigdelay:
   push del_lo
   push del_hi
 
-  ldi temp2, 40
+  ldi temp2, 38
   delayloop :
   ldi del_lo, low(50000)
   ldi del_hi, high(50000)
@@ -501,7 +509,7 @@ smalldelay:
   push del_lo
   push del_hi
 
-  ldi temp2, 7
+  ldi temp2, 2
   delayloop2 :
   ldi del_lo, low(50000)
   ldi del_hi, high(50000)
@@ -517,10 +525,10 @@ interruptDelay:
    push del_lo
    push del_hi
 
-   ldi temp2, 7
+   ldi temp2, 1
    delayloop3:
-      ldi del_lo, low(50000)
-      ldi del_hi, high(50000)
+      ldi del_lo, low(2300)
+      ldi del_hi, high(2300)
       rcall delayCTL
       subi temp2, 1
       brne delayloop3
@@ -538,19 +546,21 @@ EXT_INT4:
    push temp
 
    // INCREMENT THE COUNT WHEREVER IT IS
-	ldi ZL, low(holeCount)
+   ldi ZL, low(holeCount)
    ldi ZH, high(holeCount)
 
    ld temp, Z
 
    inc temp
-
-   st Z, temp
-
-   ld temp, Z
    rcall print_unsigned
 
-   // WAIT 2300
+st Z, temp
+
+   ldi temp, ' '
+   rcall print_unsigned
+
+
+    //WAIT 2300
    rcall interruptDelay 
 
    pop temp
@@ -559,6 +569,48 @@ EXT_INT4:
    pop ZH
    pop ZL
 reti
+
+// interrupt handler
+RPS:
+	push ZL
+   push ZH
+   push temp
+   in temp, SREG
+   push temp
+	push data
+
+
+   // INCREMENT THE COUNT WHEREVER IT IS
+	ldi ZL, low(holeCount)
+   ldi ZH, high(holeCount)
+
+	ldi temp, 0
+	st Z, temp
+
+	rcall smalldelay
+
+
+	ldi data, LCD_DISP_CLR
+	rcall lcd_wait_busy
+	rcall lcd_write_com 
+	
+	
+   	ld temp, Z
+	rcall print_unsigned
+
+
+   st Z, temp
+	
+   // WAIT 2300
+   //rcall interruptDelay 
+
+  pop data
+   pop temp
+   out SREG, temp
+   pop temp
+   pop ZH
+   pop ZL
+ret
 
 print_unsigned:
 	push temp  ; holds the current most significant digit
