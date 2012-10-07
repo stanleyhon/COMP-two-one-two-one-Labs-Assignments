@@ -18,8 +18,8 @@
 ;.def var = r30 z
 ;.def var = r31 z
 
-
-jmp EXT_INT0 ; ext int0
+jmp RESET
+jmp EXT_INT0 ; IRQ0 Handler
 jmp Default ; IRQ1 Handler
 jmp Default ; IRQ2 Handler
 jmp Default ; IRQ3 Handler
@@ -46,9 +46,6 @@ out SPL, temp
 ldi temp, high(RAMEND)
 out SPH, temp
 
-ldi temp, (1<<DDA7)
-out DDRA, temp2
-
 //falling edge for EXT_INT0
 ldi temp, (3<<ISC00)
 sts EICRA, temp
@@ -58,17 +55,13 @@ in temp, EIMSK
 ori temp, (1<<INT0)
 out EIMSK, temp
 
+
 //Start Timer0
 ldi temp, (1<<TOIE0) ; =278 microseconds
 out TIMSK, temp ; T/C0 interrupt enable
 
-	ldi temp, (2<<CS00)
-;no Force Output Compare (7=0)
-;-Fast PWM (6=1, 3=1)
-;Set OC0 when upcounting, (5=1,4=1)
-; prescaling value = 8(2,1,0 = 010)
-; Prescaling value=8 ;256*8/7.3728( Frequency of the clock 7.3728MHz, for the overflow it should go for 256 times)
-out TCCR0, temp
+ldi temp,0b00000010  ; setting the TCCR0 register: the last 3 bits- 001 clock;010 clock/8....
+out TCCR0,temp
 
 sei
 
@@ -236,6 +229,16 @@ in temp, DDRA
 push temp
 push temp2
 
+//For testing - should alternate leds
+		ldi temp, (1<<DDA7)
+		out DDRA, temp2
+
+		ser temp2
+		in temp, PINA
+		eor temp, temp2
+		out PORTA, temp
+
+
 ; HOWEVER: to avoid complication of dividing by 4, we can interrupt every 1/4 of a second. 899.25 interrupts per 1/4 second
 cpi counter, 99 ; counting for 99
 brne notsecond
@@ -247,6 +250,9 @@ outmot: ldi counter,0 ; clearing the counter values after counting 3597 interrup
         ldi counter2,0
         ldi counter3,0
      
+		ldi temp, (1<<DDA7)
+		out DDRA, temp2
+
 		ser temp2
 		in temp, PINA
 		eor temp, temp2
