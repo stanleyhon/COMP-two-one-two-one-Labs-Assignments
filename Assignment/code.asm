@@ -43,14 +43,16 @@ ldi temp, low(RAMEND)
 out SPL, temp
 ldi temp, high(RAMEND)
 out SPH, temp
-ser temp
-out DDRA, temp
+
 
 main:
-  
+	
+	ldi temp2, 3
 
-	rcall main
-ret
+	//uses temp2
+	rcall stop
+
+end: rjmp end
 
 //4000000 cycles/sec
 //4000 cycles/ms - 4 cycles/micro sec
@@ -94,14 +96,14 @@ delaySec:
 	pop del_lo
 ret
 
-delayHalfSec:
+delayQuartSec:
 	push del_lo
 	push del_hi
 	push temp2
 	ldi temp2, 37
 	delayloop2 :
-		ldi del_lo, low(25000)
-		ldi del_hi, high(25000)
+		ldi del_lo, low(12500)
+		ldi del_hi, high(12500)
 		rcall delayCTL
 		subi temp2, 1
 	brne delayloop2
@@ -110,27 +112,38 @@ delayHalfSec:
 	pop del_lo
 ret
 
-
 stop:
-	push del_lo
-	push del_hi
 	push temp
+	in temp, DDRA
+	push temp
+
+	ldi temp, (1<<DDA7)
+	out DDRA, temp
+
 	delayloop3 :
-		ldi temp, 0b10101010
+		ser temp
 		out PORTA, temp
-	
-		rcall delayHalfSec
+		rcall delayQuartSec
 
-		ldi temp, 0b01010101
+		ldi temp, 0
 		out PORTA, temp
-	
-		rcall delayHalfSec
+		rcall delayQuartSec
+
+		ser temp
+		out PORTA, temp
+		rcall delayQuartSec
+
+		ldi temp, 0
+		out PORTA, temp
+		rcall delayQuartSec
 
 
-		subi temp, 1
+
+		subi temp2, 1
 	brne delayloop3
 
+	
 	pop temp
-	pop del_hi
-	pop del_lo
+	out DDRA, temp2
+	pop temp
 ret
