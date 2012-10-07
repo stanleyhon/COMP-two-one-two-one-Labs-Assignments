@@ -75,22 +75,24 @@ holeCount: .byte 1 ; keeps track of hole count
 .cseg
 
 jmp RESET         ; Reset Handler
-jmp noInt    ; IRQ0 Handler
-jmp noInt    ; IRQ1 Handler
-jmp noInt    ; IRQ2 Handler
-jmp noInt    ; IRQ3 Handler
+jmp EXT_INT0    ; IRQ0 Handler
+jmp Default    ; IRQ1 Handler
+jmp Default    ; IRQ2 Handler
+jmp Default    ; IRQ3 Handler
 jmp EXT_INT4    ; IRQ4 Handler
-jmp noInt ; irq5
-jmp noInt ; 6
-jmp noInt ; 7
-jmp noInt ; timer2
-jmp noInt
-jmp noInt ; timer 1
-jmp noInt
-jmp noInt ; timer 0 compare
-jmp Timer0 ; timer 0 overflow
+jmp Default ; irq5
+jmp Default ; 6
+jmp Default ; 7
+jmp Default ; timer2
+jmp Default
+jmp Default ; timer 1
+jmp Default
+jmp Default
+jmp Default
+jmp Default ; timer 0 compare
+jmp Default ; timer 0 overflow
 
-noInt:
+Default:
    reti
 
 
@@ -102,7 +104,7 @@ ldi temp, high(RAMEND)
 out SPH, temp
 ldi temp, PORTDDIR ; columns are outputs, rows are inputs
 out DDRC, temp
-
+sei
 
 ; INTERRUPTS FOR COUNTING SPINS
 
@@ -113,9 +115,15 @@ out DDRC, temp
 //2 = 
 //1 = 
 
+ldi temp, (2 << ISC00) 				;setting the interrupts for falling edge
+sts EICRA, temp                       ;storing them into EICRB	
+in temp, EIMSK                        ;taking the values inside the EIMSK  
+ori temp, (1<<INT0)      			
+out EIMSK, temp   
+
 
 ; enabling interrupt
-ldi temp, (1 << ISC40) 				;setting the interrupts for falling edge
+ldi temp, (2 << ISC40) 				;setting the interrupts for falling edge
 sts EICRB, temp                       ;storing them into EICRB	
 in temp, EIMSK                        ;taking the values inside the EIMSK  
 ori temp, (1<<INT4)      			
@@ -123,7 +131,9 @@ out EIMSK, temp                       ; enabling interrupt4
 //ldi temp, 1
 //out DDE4, temp //Set PORTE to out
 
-rcall lcd_init
+
+
+
 ldi count, 0
 dec count
 
@@ -140,7 +150,7 @@ out OCR0, temp
 ser temp
 out DDRB, temp
 
-sei
+rcall lcd_init
 
 ; main keeps scanning the keypad to find which key is pressed.
 main:
@@ -509,10 +519,10 @@ smalldelay:
   push del_lo
   push del_hi
 
-  ldi temp2, 2
+  ldi temp2, 37
   delayloop2 :
-  ldi del_lo, low(50000)
-  ldi del_hi, high(50000)
+  ldi del_lo, low(12500)
+  ldi del_hi, high(12500)
   rcall delayCTL
   subi temp2, 1
   brne delayloop2
@@ -539,6 +549,8 @@ ret
 
 // interrupt handler
 EXT_INT4:
+
+
 	push ZL
    push ZH
    push temp
@@ -552,22 +564,27 @@ EXT_INT4:
    ld temp, Z
 
    inc temp
-   rcall print_unsigned
 
-st Z, temp
-
-   ldi temp, ' '
    rcall print_unsigned
 
 
+   st Z, temp
+
+   //push data
+   //ldi data, '.'
+   //rcall lcd_wait_busy
+   //rcall lcd_write_data
+   //pop data
+/*
     //WAIT 2300
    rcall interruptDelay 
-
+*/
    pop temp
    out SREG, temp
    pop temp
    pop ZH
    pop ZL
+   
 reti
 
 // interrupt handler
@@ -589,7 +606,6 @@ RPS:
 
 	rcall smalldelay
 
-
 	ldi data, LCD_DISP_CLR
 	rcall lcd_wait_busy
 	rcall lcd_write_com 
@@ -597,9 +613,6 @@ RPS:
 	
    	ld temp, Z
 	rcall print_unsigned
-
-
-   st Z, temp
 	
    // WAIT 2300
    //rcall interruptDelay 
@@ -723,3 +736,8 @@ Timer0:
 */
 
 reti
+
+EXT_INT0:
+
+reti
+
