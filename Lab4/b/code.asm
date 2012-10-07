@@ -8,12 +8,12 @@
 
 /*
   Keypad => PC0-PC7
-	LCD(Debug) => PD0-PD7
-	LCD Control(Debug) => PA0-PA3
+	LCD(Debug) => PA0-PA7
+	LCD Control(Debug) => PB0-PB3
 	Mot => PB4
 
 	PB0 => OpE
-	PE4 => OpD
+	PD0 => OpD
 
 	ï INT4/OC3B ñ Port E, Bit 4
 	INT4, External Interrupt Source 4: The PE4 pin can serve as an External Interrupt source.
