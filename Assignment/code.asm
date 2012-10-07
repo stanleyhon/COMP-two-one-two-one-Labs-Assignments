@@ -19,24 +19,26 @@
 ;.def var = r31 z
 
 
-jmp RESET ; Reset Handler
-jmp noInt ; IRQ0 Handler
-jmp noInt ; IRQ1 Handler
-jmp noInt ; IRQ2 Handler
-jmp noInt ; IRQ3 Handler
-jmp noInt ; IRQ4 Handler
-jmp noInt ; irq5
-jmp noInt ; 6
-jmp EXT_INT7 ; 7
-jmp noInt ; timer2
-jmp noInt
-jmp noInt ; timer 1
-jmp noInt
-jmp noInt ; timer 0 compare
-jmp Timer0  ; timer 0 overflow
+jmp EXT_INT0 ; ext int0
+jmp Default ; IRQ1 Handler
+jmp Default ; IRQ2 Handler
+jmp Default ; IRQ3 Handler
+jmp Default ; IRQ4 Handler
+jmp Default ; IRQ5 Handler
+jmp Default ; IRQ6 Handler
+jmp Default ; IRQ7 Handler
+jmp Default ; Timer2 Compare Handler
+jmp Default ; Timer2 Overflow Handler
+jmp Default ; Timer1 Capture Handler
+jmp Default ; Timer1 CompareA Handler
+jmp Default ; Timer1 CompareB Handler
+jmp Default ; Timer1 Overflow Handler
+jmp Default ; Timer0 Compare Handler
+jmp Timer0 ; Timer0 Overflow Handler
 
-noInt:
-   reti
+
+Default:
+reti
 
 RESET:
 ldi temp, low(RAMEND)
@@ -44,24 +46,37 @@ out SPL, temp
 ldi temp, high(RAMEND)
 out SPH, temp
 
-//clr temp
-//out DDRD, temp
-//out PORTD, temp
+ldi temp, (1<<DDA7)
+out DDRA, temp2
 
-
-ldi temp, (2 << ISC70)
+//falling edge for EXT_INT0
+ldi temp, (3<<ISC00)
 sts EICRA, temp
 
+//enable EXT_INT0
 in temp, EIMSK
-ori temp, (1<<INT7)
+ori temp, (1<<INT0)
 out EIMSK, temp
 
+//Start Timer0
+ldi temp, (1<<TOIE0) ; =278 microseconds
+out TIMSK, temp ; T/C0 interrupt enable
+
+	ldi temp, (2<<CS00)
+;no Force Output Compare (7=0)
+;-Fast PWM (6=1, 3=1)
+;Set OC0 when upcounting, (5=1,4=1)
+; prescaling value = 8(2,1,0 = 010)
+; Prescaling value=8 ;256*8/7.3728( Frequency of the clock 7.3728MHz, for the overflow it should go for 256 times)
+out TCCR0, temp
 
 sei
 
 
 main:
 	
+
+
 	//ldi temp2, 3
 
 	//uses temp2
@@ -176,34 +191,37 @@ ret
 
 
 
-EXT_INT7:
+EXT_INT0:
 	push temp
 	in temp, SREG
 	push temp
+	push temp2
+/*
+	in temp, TIMSK
+	LSR temp
+	BRCS disableTimer
 
-	//in temp, TIMSK
-	//LSR temp
-	//BRCS disableTimer
+	ldi temp, 1<<TOIE0 ; =278 microseconds
+	out TIMSK, temp ; T/C0 interrupt enable
+	jmp exitInt
 
-	//ldi temp, 1<<TOIE0 ; =278 microseconds
-	//out TIMSK, temp ; T/C0 interrupt enable
-	//jmp exitInt
+	disableTimer:
 
-	//disableTimer:
+	ldi temp, 0<<TOIE0 ; =278 microseconds
+	out TIMSK, temp ; T/C0 interrupt disable
 
-	//ldi temp, 0<<TOIE0 ; =278 microseconds
-	//out TIMSK, temp ; T/C0 interrupt disable
+	exitInt:
 
-	//exitInt:
+	ldi counter,0 ; clearing the counter values after counting 3597 interrupts which gives us one second
+   ldi counter2,0
+   ldi counter3,0
+*/
 
-	//ldi counter,0 ; clearing the counter values after counting 3597 interrupts which gives us one second
-   //ldi counter2,0
-   //ldi counter3,0
 
-	ldi temp2, 2
+	ldi temp2, 1
 	rcall stop
 
-
+	pop temp2
 	pop temp
 	out SREG, temp
 	pop temp
@@ -216,10 +234,7 @@ in temp, SREG
 push temp
 in temp, DDRA
 push temp
-; Prologue ends.
-
-/**** a counter for 3597 is needed to get one second-- Three counters are used in this example **************/
-                         ; 3597 (1 interrupt   therefore 3597 interrupts needed for 1 sec)
+push temp2
 
 ; HOWEVER: to avoid complication of dividing by 4, we can interrupt every 1/4 of a second. 899.25 interrupts per 1/4 second
 cpi counter, 99 ; counting for 99
@@ -231,7 +246,8 @@ brne secondloop ; jumping into count 100
 outmot: ldi counter,0 ; clearing the counter values after counting 3597 interrupts which gives us one second
         ldi counter2,0
         ldi counter3,0
-        
+     
+		ser temp2
 		in temp, PINA
 		eor temp, temp2
 		out PORTA, temp
@@ -246,12 +262,14 @@ secondloop: inc counter3 ; counting 100 for every 35 times := 35*100 := 3500
             brne exit
 inc counter2
 ldi counter3,0
+
 exit:
 
-
+pop temp2
 pop temp
 out DDRA, temp
 pop temp ; Epilogue starts;
 out SREG, temp ; Restore all conflict registers from the stack.
 pop temp
 reti ; Return from the interrupt. ; Return from the interrupt.
+
