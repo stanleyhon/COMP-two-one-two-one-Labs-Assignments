@@ -8,8 +8,8 @@
 
 /*
   Keypad => PC0-PC7
-  LCD(Debug) => PD0-PD7
-	LCD Control(Debug) => PA0-PA3
+  LCD(Debug) => PA0-PA7
+	LCD Control(Debug) => PB0-PB3
 	Mot => PB4
 
 	PB0 => OpE
@@ -105,6 +105,9 @@ out SPH, temp
 ldi temp, PORTADIR ; columns are outputs, rows are inputs
 out DDRC, temp
 
+ldi temp, 0b11110000
+out DDRB, temp
+
 
 ; INTERRUPTS FOR COUNTING SPINS
 
@@ -122,9 +125,6 @@ ori temp, (1<<INT0)
 out EIMSK, temp   
 sei
 
-
-
-
 ldi count, 0
 dec count
 
@@ -138,8 +138,8 @@ out TCCR0, temp
 ldi temp, 70
 out OCR0, temp
 
-ser temp
-out DDRD, temp
+//ser temp
+//out DDRD, temp
 
 rcall lcd_init
 
@@ -150,7 +150,7 @@ main:
 ldi mask, INITCOLMASK ; initial column mask
 clr col ; initial column
 colloop:
-//rcall RPS
+rcall RPS
 out PORTC, mask ; set column to mask value
 ; (sets column 0 off)
 ldi temp, 0xFF ; implement a delay so the
@@ -557,20 +557,11 @@ EXT_INT0:
 
    inc temp
 
-   rcall print_unsigned
-
-
    st Z, temp
 
-   //push data
-   //ldi data, '.'
-   //rcall lcd_wait_busy
-   //rcall lcd_write_data
-   //pop data
-/*
     //WAIT 2300
-   rcall interruptDelay 
-*/
+   //rcall interruptDelay 
+
    pop temp
    out SREG, temp
    pop temp
@@ -606,8 +597,6 @@ RPS:
    	ld temp, Z
 	rcall print_unsigned
 	
-   // WAIT 2300
-   //rcall interruptDelay 
 
   pop data
    pop temp
@@ -728,5 +717,4 @@ Timer0:
 */
 
 reti
-
 
