@@ -60,7 +60,7 @@ ldi temp, high(RAMEND)
 out SPH, temp
 
 //falling edge for EXT_INT0
-ldi temp, (3<<ISC00)
+ldi temp, (2<<ISC00)
 sts EICRA, temp
 
 //enable EXT_INT0
@@ -68,26 +68,34 @@ in temp, EIMSK
 ori temp, (1<<INT0)
 out EIMSK, temp
 
+//led out
+ldi temp, (1<<DDA7)
+out DDRA, temp
 
-//Start Timer0
-ldi temp, (1<<TOIE0) ; =278 microseconds
-out TIMSK, temp ; T/C0 interrupt enable
+//motor out
+ldi temp, (1<<DDB4)
+out DDRB, temp
 
-ldi temp,0b00000010  ; setting the TCCR0 register: the last 3 bits- 001 clock;010 clock/8....
-out TCCR0,temp
+//Timer enable (normally enabled on EXT_INT0
+//ldi temp, (1<<TOIE0) ; =278 microseconds
+//out TIMSK, temp ; T/C0 interrupt enable
+
+ldi temp, (1<<WGM01) | (1<<WGM00) | (2<<COM00) | (2<<CS00)
+/*	WGM01 + WGM00 = NO force output compare (for PWN modes)
+COM00 = Clear OC0 on Compare Match when up-counting. Set OC0 on Compare Match when downcounting.
+CS00 = Prescaler = 8
+*/
+out TCCR0, temp
+
+//set motor (noramlly set on iterrupt)
+//ldi temp, 100
+//out OCR0, temp
 
 sei
 
 
 main:
 	
-
-
-	//ldi temp2, 3
-
-	//uses temp2
-	//rcall stop
-
 end: rjmp end
 
 //4000000 cycles/sec
@@ -154,10 +162,6 @@ stop:
 	in temp, DDRA
 	push temp
 
-
-	ldi temp, (1<<DDA7)
-	out DDRA, temp
-
 	delayloop3 :
 		push temp2
 		ser temp2
@@ -202,30 +206,61 @@ EXT_INT0:
 	in temp, SREG
 	push temp
 	push temp2
-/*
+
 	in temp, TIMSK
 	LSR temp
 	BRCS disableTimer
 
-	ldi temp, 1<<TOIE0 ; =278 microseconds
-	out TIMSK, temp ; T/C0 interrupt enable
-	jmp exitInt
+	enableTimer:
+
+		ldi temp, (1<<TOIE0) ; =278 microseconds
+		out TIMSK, temp ; T/C0 interrupt enable
+
+		ldi counter,0 ; clearing the counter values after counting 3597 interrupts which gives us one second
+		ldi counter2,0
+		ldi counter3,0
+
+
+		//make sure PB4 is out
+		in temp, DDRB
+		ori temp, (1<<DDB4)
+		out DDRB, temp
+
+		//set motor
+		ldi temp, 100
+		out OCR0, temp
+
+		jmp exitInt
 
 	disableTimer:
 
-	ldi temp, 0<<TOIE0 ; =278 microseconds
-	out TIMSK, temp ; T/C0 interrupt disable
+		ldi temp, (0<<TOIE0) ; =278 microseconds
+		out TIMSK, temp ; T/C0 interrupt disable
+
+
+		//make sure PB4 is out
+		in temp, DDRB
+		ori temp, (1<<DDB4)
+		out DDRB, temp
+
+		//set motor
+		ldi temp, 0
+		out OCR0, temp
+
+		in temp, DDRA
+		push temp
+
+		//make sure PB4 is out
+		ldi temp, (1<<DDB4)
+		out DDRB, temp
+
+		//TODO outs 0 to PORTA (should only out to pin7)
+		out PORTA, temp
+
+		pop temp
+		out DDRA, temp
 
 	exitInt:
-
-	ldi counter,0 ; clearing the counter values after counting 3597 interrupts which gives us one second
-   ldi counter2,0
-   ldi counter3,0
-*/
-
-
-	ldi temp2, 1
-	rcall stop
 
 	pop temp2
 	pop temp
@@ -238,19 +273,7 @@ Timer0: ; Prologue starts.
 push temp ; Save all conflict registers in the prologue.
 in temp, SREG
 push temp
-in temp, DDRA
-push temp
 push temp2
-
-//For testing - should alternate leds
-		ldi temp, (1<<DDA7)
-		out DDRA, temp2
-
-		ser temp2
-		in temp, PINA
-		eor temp, temp2
-		out PORTA, temp
-
 
 ; HOWEVER: to avoid complication of dividing by 4, we can interrupt every 1/4 of a second. 899.25 interrupts per 1/4 second
 cpi counter, 99 ; counting for 99
@@ -262,9 +285,11 @@ brne secondloop ; jumping into count 100
 outmot: ldi counter,0 ; clearing the counter values after counting 3597 interrupts which gives us one second
         ldi counter2,0
         ldi counter3,0
-     
-		ldi temp, (1<<DDA7)
-		out DDRA, temp2
+
+		//make sure PA7 is out
+		in temp, DDRA
+		ori temp, (1<<DDA7)
+		out DDRA, temp
 
 		ser temp2
 		in temp, PINA
@@ -279,14 +304,13 @@ notsecond: inc counter ; if it is not a second, increment the counter
 secondloop: inc counter3 ; counting 100 for every 35 times := 35*100 := 3500
             cpi counter3,100
             brne exit
-inc counter2
-ldi counter3,0
+			inc counter2
+			ldi counter3,0
 
 exit:
 
+
 pop temp2
-pop temp
-out DDRA, temp
 pop temp ; Epilogue starts;
 out SREG, temp ; Restore all conflict registers from the stack.
 pop temp
