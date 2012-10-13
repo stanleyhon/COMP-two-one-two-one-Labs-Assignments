@@ -1,4 +1,17 @@
+// Cabling:
+// KEYPAD      -> PD0-PD7
+// LCD         -> PC0-PC7
+// LCD CONTROL -> PA0-PA4
 
+// VERSION 0.1 SPECIFIC:
+// LED0        -> PA7
+// LED1        -> PA7
+
+// Assignment Version X
+// - Additional features/changes here
+
+// Assignment Version 0.1
+// - Only does basic LED proof-of-concept
 .include "m64def.inc"
 
 .def temp = r16
@@ -278,4 +291,3 @@ pop temp ; Epilogue starts;
 out SREG, temp ; Restore all conflict registers from the stack.
 pop temp
 reti ; Return from the interrupt. ; Return from the interrupt.
-
