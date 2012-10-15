@@ -2,10 +2,8 @@
 // KEYPAD      -> PD0-PD7
 // LCD         -> PC0-PC7
 // LCD CONTROL -> PA0-PA4
-
-// VERSION 0.1 SPECIFIC:
-// LED0        -> PA7
-// LED1        -> PA7
+// PB1         -> doubled up on PD0
+// Motor       -> PB4
 
 // Assignment Version X
 // - Additional features/changes here
@@ -20,6 +18,7 @@
 
 // Assignment Version 0.3 - Stanley
 // - General keypad functionality working
+// - Merged.
 
 .def temp = r16
 .
