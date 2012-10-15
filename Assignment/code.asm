@@ -109,18 +109,13 @@ rcall lcd_wait_busy ; Wait until the LCD is ready
 ldi temp, (2<<ISC00)
 sts EICRA, temp
 
-//enable EXT_INT0
-in temp, EIMSK
-ori temp, (1<<INT0)
+//enable EXT_INT4
+ldi temp, (1<<INT0)
 out EIMSK, temp
 
-//led out
-in temp, DDRA
-ori temp, (1<<DDA7)
-out DDRA, temp
 
-//motor out
-ldi temp, (1<<DDB4)
+//motor out + led out
+ldi temp, (1<<DDB4)|(1<<DDB0)
 out DDRB, temp
 
 //Timer enable (normally enabled on EXT_INT0
@@ -257,12 +252,6 @@ EXT_INT0:
 	push temp
 	push temp2
 
-
-	//make sure PB4 is out
-	in temp, DDRB
-	ori temp, (1<<DDB4)
-	out DDRB, temp
-
 	in temp, TIMSK
 	LSR temp
 	BRCS disableTimer
@@ -277,7 +266,7 @@ EXT_INT0:
 		ldi counter3,0
 
 		//set motor
-		ldi temp, 100
+		ldi temp, 0
 		out OCR0, temp
 
 		jmp exitInt
@@ -288,21 +277,20 @@ EXT_INT0:
 		out TIMSK, temp ; T/C0 interrupt disable
 
 		//set motor
-		ldi temp, 0
+		ldi temp, 100
 		out OCR0, temp
 
-		in temp, DDRA
+		in temp, DDRB
 		push temp
 
-		ldi temp, (1<<DDA7)
-		out DDRA, temp
+		ldi temp, (1<<DDB0)
+		out DDRB, temp
 
-		//TODO outs 0 to PORTA (should only out to pin7)
 		clr temp
-		out PORTA, temp
+		out PORTB, temp
 
 		pop temp
-		out DDRA, temp
+		out DDRB, temp
 
 	exitInt:
 
@@ -330,21 +318,20 @@ outmot: ldi counter,0 ; clearing the counter values after counting 3597 interrup
         ldi counter2,0
         ldi counter3,0
 
-		in temp, DDRA
+
+		in temp, DDRB
 		push temp
 
+		ldi temp, (1<<DDB0)
+		out DDRB, temp
+
 		ser temp2
-
-				//make sure PA7 is out
-		ldi temp,(1<<DDA7) | (3<<DDA0)
-		out DDRA, temp
-
-		in temp, PINA
+		in temp, PINB
 		eor temp, temp2
-		out PORTA, temp
-                          
+		out PORTB, temp
+                
 		pop temp
-		out DDRA, temp
+		out DDRB, temp
 
         rjmp exit ; go to exit
 
