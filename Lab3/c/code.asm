@@ -5,6 +5,8 @@
 .def mask =r19
 .def count = r20
 
+// sdfjkas;dlfkjasld;kfjasl;dfas;dlf
+
 // ************* LCD COPY ********************
 
 // .def temp =r16
