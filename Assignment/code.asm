@@ -2,10 +2,8 @@
 // KEYPAD      -> PD0-PD7
 // LCD         -> PC0-PC7
 // LCD CONTROL -> PA0-PA4
-
-// VERSION 0.1 SPECIFIC:
-// LED0        -> PA7
-// LED1        -> PA7
+// PB1         -> doubled up on PD0
+// Motor       -> PB4
 
 // Assignment Version X
 // - Additional features/changes here
@@ -18,23 +16,33 @@
 // - Added functional LCD
 // - Working on printing query string
 
+// Assignment Version 0.3 - Stanley
+// - General keypad functionality working
+// - Merged.
+
 .def temp = r16
-.def temp2 = r17
+.
+.def temp2 = r26
 .def orig = r17 // dupe used for writeNumber
-.def del_lo = r18
-.def del_hi = r19
-.def counter = r20
-.def counter2 = r21
-.def counter3 = r22
-.def data = r23 // Used in LCD Functions
-;.def var = r24
-;.def var = r25
-;.def var = r26 x
-;.def var = r27 x
+.def row = r17 // dupe used for row for keypad polling
+.def col = r18 // keypad polling related
+.def del_lo = r19
+// .def count = r27 // dupe used for polling keypad
+.def del_hi = r20
+.def counter = r21
+.def counter2 = r22
+.def counter3 = r23
+.def data = r24 // Used in LCD Functions
+.def mask = r25 // Keypad polling related
+;.def var = r26 x // used above
+;.def var = r27 x // used above
 ;.def var = r28 y
 ;.def var = r29 y
 ;.def var = r30 z
-;.def var = r31 z
+.def NUMBER_READ_MODE_REG = r31
+
+
+.cseg
 
 jmp RESET
 jmp EXT_INT0 ; IRQ0 Handler
@@ -86,6 +94,13 @@ jmp Timer0 ; Timer0 Overflow Handler
 .equ LCD_LINE1 = 0
 .equ LCD_LINE2 = 0x40
 
+// KEYPAD bits and constants
+.equ PORTDDIR = 0xF0
+.equ INITCOLMASK = 0xEF
+.equ INITROWMASK = 0x01
+.equ ROWMASK = 0x0F
+
+
 Default:
 reti
 
@@ -95,6 +110,10 @@ out SPL, temp
 ldi temp, high(RAMEND)
 out SPH, temp
 
+// Set read number flag to true because first thing to be
+// asked is "Please type the maximum number of stations:"
+ldi NUMBER_READ_MODE_REG, 1
+
 
 //Initialise the LCD
 rcall lcd_init
@@ -103,7 +122,6 @@ rcall lcd_init
 ldi data, LCD_DISP_CLR
 rcall lcd_write_com ; Clear Display
 rcall lcd_wait_busy ; Wait until the LCD is ready
-
 
 //falling edge for EXT_INT0
 ldi temp, (2<<ISC00)
@@ -129,6 +147,11 @@ CS00 = Prescaler = 8
 */
 out TCCR0, temp
 
+// KEYPAD
+ldi temp, PORTDDIR ; columns are outputs, rows are inputs
+out DDRD, temp
+ser temp
+
 sei
 
 // String definitions for query strings
@@ -139,11 +162,31 @@ name_station_query: .db "name stat "
 main:
 
 	rcall lcd_wait_busy
-
 	ldi data, 10
 	rcall lcd_write_name_station_in_data
+	// WRITE THE FIRST LINE
 
-end: rjmp end
+	ldi data, LCD_GO_TO_START_2ND_LINE
+	rcall lcd_wait_busy
+	rcall lcd_write_com
+	// CHANGE THE POINTER TO THE SECOND LINE
+
+	rcall scan_for_key // read a key
+	rcall lcd_wait_busy
+	rcall lcd_write_data	
+
+
+   // turn reading number mode off, so then you can read everything
+   ldi NUMBER_READ_MODE_REG, 0
+
+
+   rcall scan_for_key // read a key
+	rcall lcd_wait_busy
+	rcall lcd_write_data	
+
+end: 
+
+rjmp end
 
 //4000000 cycles/sec
 //4000 cycles/ms - 4 cycles/micro sec
@@ -346,7 +389,6 @@ secondloop: inc counter3 ; counting 100 for every 35 times := 35*100 := 3500
 
 exit:
 
-
 pop temp2
 pop temp ; Epilogue starts;
 out SREG, temp ; Restore all conflict registers from the stack.
@@ -439,6 +481,7 @@ ret
 
 ;Function lcd_wait_busy: Read the LCD busy flag until it reads as not busy.
 lcd_wait_busy:
+	push temp
 	clr temp
 	out DDRC, temp ; Make PORTC be an input port for now
 	out PORTC, temp
@@ -460,6 +503,7 @@ lcd_wait_busy:
 	out PORTA, temp ; turn off read mode,
 	ser temp
 	out DDRC, temp ; make PORTD an output port again
+	pop temp
 ret ; and return
 
 
@@ -621,4 +665,178 @@ ret
 
 /********************************************************************/
 /********** LCD FUNCTIONS ABOVE THIS POINT **************************/
+/********************************************************************/
+
+/********************************************************************/
+/********** KEYPAD CODE BELOW THIS POINT ****************************/
+/********************************************************************/
+
+scan_for_key:
+
+ldi mask, INITCOLMASK ; initial column mask
+clr col ; initial column
+colloop:
+out PORTD, mask ; set column to mask value
+; (sets column 0 off)
+ldi temp, 0xFF ; implement a delay so the
+; hardware can stabilize
+delay:
+dec temp
+brne delay
+in temp, PIND ; read PORTD
+andi temp, ROWMASK ; read only the row bits
+cpi temp, 0xF ; check if any rows are grounded
+breq nextcol ; if not go to the next column
+ldi mask, INITROWMASK ; initialise row check
+clr row ; initial row
+rowloop:
+mov temp2, temp
+and temp2, mask ; check masked bit
+brne skipconv ; if the result is non-zero,
+; we need to look again
+rcall convert ; if bit is clear, convert the bitcode
+
+cpi data, '.'
+breq scan_for_key
+
+ret ; and start again
+
+skipconv:
+inc row ; else move to the next row
+lsl mask ; shift the mask to the next bit
+jmp rowloop
+nextcol:
+cpi col, 3 ; check if we’re on the last column
+breq scan_for_key ; if so, no buttons were pushed,
+; so start again.
+sec ; else shift the column mask:
+; We must set the carry bit
+rol mask ; and then rotate left by a bit,
+; shifting the carry into
+; bit zero. We need this to make
+; sure all the rows have
+; pull-up resistors
+inc col ; increment column value
+jmp colloop ; and check the next column
+; convert function converts the row and column given to a
+; binary number and also outputs the value to PORTC.
+; Inputs come from registers row and col and output is in
+; temp.
+
+convert:
+
+skipclear:
+
+cpi col, 3 ; if column is 3 we have a letter
+breq letters
+cpi row, 3 ; if row is 3 we have a symbol or 0
+breq symbols
+
+ldi temp, 0
+cp NUMBER_READ_MODE_REG, temp
+breq read_another_key
+
+mov temp, row ; otherwise we have a number (1-9)
+lsl temp ; temp = row * 2
+add temp, row ; temp = row * 3
+add temp, col ; add the column address
+; to get the offset from 1
+inc temp ; add 1. Value of switch is
+; row*3 + col + 1
+push temp2
+ldi temp2, '0'
+add temp, temp2
+pop temp2
+
+jmp convert_end
+letters:
+
+
+// NUMBER_READ_MODE_ON IS ON DON'T DO THIS
+ldi temp, 1
+cp NUMBER_READ_MODE_REG, temp
+breq read_another_key // uses the hack below
+
+ldi temp, 'A'
+add temp, row ; increment from 0xA by the row value
+jmp convert_end
+symbols:
+
+
+ldi temp, 1
+cp NUMBER_READ_MODE_REG, temp // NUMBER_READ_MODE_ON IS ON DON'T DO THIS
+breq read_another_key // using breq scan_for_key causes error because too far to breq jump
+jmp no_jmp
+
+read_another_key:
+   ldi data, '.'
+   ret
+
+no_jmp:
+
+cpi col, 0 ; check if we have a star
+breq star
+cpi col, 1 ; or if we have zero
+breq zero
+ldi temp, '#' 
+jmp convert_end
+star:
+ldi temp, '*' 
+jmp convert_end
+zero:
+; set to zero
+ldi temp, '0'
+convert_end:
+
+mov data, temp
+
+dontprint:
+ldi mask, INITCOLMASK ; initial column mask
+clr col ; initial column
+colloop2:
+out PORTD, mask ; set column to mask value
+; (sets column 0 off)
+ldi temp, 0xFF ; implement a delay so the
+; hardware can stabilize
+delay2:
+dec temp
+brne delay2
+in temp, PIND ; read PORTD
+andi temp, ROWMASK ; read only the row bits
+cpi temp, 0xF ; check if any rows are grounded
+breq nextcol2 ; if not go to the next column
+ldi mask, INITROWMASK ; initialise row check
+clr row ; initial row
+rowloop2:
+mov temp2, temp
+and temp2, mask ; check masked bit
+brne dontprint ; if the result is non-zero,
+
+inc row ; else move to the next row
+lsl mask ; shift the mask to the next bit
+jmp rowloop2
+nextcol2:
+cpi col, 3 ; check if we’re on the last column
+breq return ; if so, no buttons were pushed,
+; so start again.
+sec ; else shift the column mask:
+; We must set the carry bit
+rol mask ; and then rotate left by a bit,
+; shifting the carry into
+; bit zero. We need this to make
+; sure all the rows have
+; pull-up resistors
+inc col ; increment column value
+jmp colloop2 ; and check the next column
+; convert function converts the row and column given to a
+; binary number and also outputs the value to PORTC.
+; Inputs come from registers row and col and output is in
+; temp.
+
+return:
+ret ; return to caller
+
+
+/********************************************************************/
+/********** KEYPAD CODE ABOVE THIS POINT ****************************/
 /********************************************************************/
