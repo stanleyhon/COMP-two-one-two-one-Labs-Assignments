@@ -20,6 +20,12 @@
 // - General keypad functionality working
 // - Merged.
 
+// TODO:
+// DONE - both number and letter mode should allow # for finish entering data (e.g. enter your name, [name]#)
+// DONE - letter mode should allow for * to confirm the character, (e.g. 222* = C)
+// - a way to access all the alphabetical letters
+//    + perhaps a wrapper over scan_for_key, that interprets data properly.
+// - 
 .def temp = r16
 .
 .def temp2 = r26
@@ -27,8 +33,11 @@
 .def row = r17 // dupe used for row for keypad polling
 .def col = r18 // keypad polling related
 .def del_lo = r19
+.def arrayIndex = r19
+.def stationNumber = r19
 // .def count = r27 // dupe used for polling keypad
 .def del_hi = r20
+.def arrayData = r20
 .def counter = r21
 .def counter2 = r22
 .def counter3 = r23
@@ -39,19 +48,25 @@
 ;.def var = r28 y
 ;.def var = r29 y
 ;.def var = r30 z
-.def NUMBER_READ_MODE_REG = r31
+.def keypadMode = r31
 
+.dseg
+   .org 0x690
+   wrapperStorage: .byte 1
+
+   .org 0x100
+array: .byte 200 ; 100 x 1 byte numbers
 
 .cseg
 
 jmp RESET
-jmp EXT_INT0 ; IRQ0 Handler
+jmp Default ; IRQ0 Handler
 jmp Default ; IRQ1 Handler
 jmp Default ; IRQ2 Handler
 jmp Default ; IRQ3 Handler
 jmp Default ; IRQ4 Handler
 jmp Default ; IRQ5 Handler
-jmp Default ; IRQ6 Handler
+jmp EXT_INT6 ; IRQ6 Handler
 jmp Default ; IRQ7 Handler
 jmp Default ; Timer2 Compare Handler
 jmp Default ; Timer2 Overflow Handler
@@ -77,11 +92,15 @@ jmp Timer0 ; Timer0 Overflow Handler
 .equ LCD_ENTRY_SET = 0b00000100
 .equ LCD_ADDR_SET = 0b10000000
 
+// keypadRead modes
+.equ LETTER_MODE = 1
+.equ NUMBER_MODE = 2
+
 
 .equ LCD_GO_TO_START_2ND_LINE = 0b11000000 // 0100 0000 is 41
 										   // 8th bit is meant to be a 1
 										   // lcd_write_com automatically writes 0,0 to rs rw
-
+.equ WRITE_IN_SAME_SPOT = 0b0000 
 
 ;LCD function bits and constants
 .equ LCD_BF = 7
@@ -112,8 +131,7 @@ out SPH, temp
 
 // Set read number flag to true because first thing to be
 // asked is "Please type the maximum number of stations:"
-ldi NUMBER_READ_MODE_REG, 1
-
+ldi keypadMode, NUMBER_MODE;
 
 //Initialise the LCD
 rcall lcd_init
@@ -124,17 +142,23 @@ rcall lcd_write_com ; Clear Display
 rcall lcd_wait_busy ; Wait until the LCD is ready
 
 //falling edge for EXT_INT0
-ldi temp, (2<<ISC00)
-sts EICRA, temp
+ldi temp, (2<<ISC60)
+out EICRB, temp
 
 //enable EXT_INT4
-ldi temp, (1<<INT0)
+ldi temp, (1<<INT6)
 out EIMSK, temp
-
 
 //motor out + led out
 ldi temp, (1<<DDB4)|(1<<DDB0)
 out DDRB, temp
+
+clr temp
+out PORTB, temp
+
+//set motor
+ldi temp, 100 
+out OCR0, temp
 
 //Timer enable (normally enabled on EXT_INT0
 //ldi temp, (1<<TOIE0) ; =278 microseconds
@@ -150,7 +174,6 @@ out TCCR0, temp
 // KEYPAD
 ldi temp, PORTDDIR ; columns are outputs, rows are inputs
 out DDRD, temp
-ser temp
 
 sei
 
@@ -171,18 +194,8 @@ main:
 	rcall lcd_write_com
 	// CHANGE THE POINTER TO THE SECOND LINE
 
-	rcall scan_for_key // read a key
-	rcall lcd_wait_busy
-	rcall lcd_write_data	
 
-
-   // turn reading number mode off, so then you can read everything
-   ldi NUMBER_READ_MODE_REG, 0
-
-
-   rcall scan_for_key // read a key
-	rcall lcd_wait_busy
-	rcall lcd_write_data	
+	rcall letter_input_wrapper	
 
 end: 
 
@@ -289,7 +302,7 @@ stop:
 	pop temp
 ret
 
-EXT_INT0:
+EXT_INT6:
 	push temp
 	in temp, SREG
 	push temp
@@ -672,7 +685,6 @@ ret
 /********************************************************************/
 
 scan_for_key:
-
 ldi mask, INITCOLMASK ; initial column mask
 clr col ; initial column
 colloop:
@@ -732,9 +744,8 @@ breq letters
 cpi row, 3 ; if row is 3 we have a symbol or 0
 breq symbols
 
-ldi temp, 0
-cp NUMBER_READ_MODE_REG, temp
-breq read_another_key
+cpi keypadMode, NUMBER_MODE
+brne read_another_key
 
 mov temp, row ; otherwise we have a number (1-9)
 lsl temp ; temp = row * 2
@@ -750,42 +761,33 @@ pop temp2
 
 jmp convert_end
 letters:
+// letter buttons should never be used.
+jmp read_another_key // uses the hack below
 
-
-// NUMBER_READ_MODE_ON IS ON DON'T DO THIS
-ldi temp, 1
-cp NUMBER_READ_MODE_REG, temp
-breq read_another_key // uses the hack below
-
-ldi temp, 'A'
-add temp, row ; increment from 0xA by the row value
-jmp convert_end
-symbols:
-
-
-ldi temp, 1
-cp NUMBER_READ_MODE_REG, temp // NUMBER_READ_MODE_ON IS ON DON'T DO THIS
-breq read_another_key // using breq scan_for_key causes error because too far to breq jump
 jmp no_jmp
-
-read_another_key:
+read_another_key: 
    ldi data, '.'
    ret
 
 no_jmp:
 
-cpi col, 0 ; check if we have a star
+
+symbols:
+cpi col, 0 ; allow stars to pass through regardless of mode
 breq star
+
 cpi col, 1 ; or if we have zero
-breq zero
-ldi temp, '#' 
+ldi temp, '0'
 jmp convert_end
+
+cpi col, 2
+ldi temp, '#' ; allow astrisks to pass through regardless of mode
+jmp convert_end
+
 star:
 ldi temp, '*' 
 jmp convert_end
-zero:
-; set to zero
-ldi temp, '0'
+
 convert_end:
 
 mov data, temp
@@ -834,9 +836,241 @@ jmp colloop2 ; and check the next column
 ; temp.
 
 return:
+
 ret ; return to caller
+
+// This function wraps "scan_for_key" and implements SMS-like
+// text input functionality - motherfucker.
+letter_input_wrapper:
+
+   push ZH
+   push ZL
+   push data
+   push temp
+   in temp, SREG
+   push temp
+   push temp2
+
+   ldi temp2, 0 // WE ARE NOT IN THE MIDDLE OF READING A LETTER
+   
+
+   ldi keypadMode, LETTER_MODE // ensure letter mode
+
+   ldi ZH, high(wrapperStorage)
+   ldi ZL, low(wrapperStorage)
+
+   processLoop:
+      rcall scan_for_key // get an input
+      
+      cpi data, '#' // If someone pressed a hash, pass it straight through
+      // TODO: BRANCH OUT OF RANGE SHIT FUCK DICK breq quitLetterInput
+
+      cpi temp2, 0
+      breq notReadingRightNow
+
+      // So we're reading something now, grab what it was.
+
+      ld temp, Z // grab what we previously read
+
+      // compare it to what we've gotten
+      cp temp, data
+      breq pressedAgain
+      // else pressedNew
+      ldi temp2, 1 // so we've only pressed it once
+
+
+      pressedAgain:
+         inc temp2
+         // manual modulo it, to find out which letter we want
+         // To modulo:
+         // if > 3, subtract 3
+         // that's it.
+         cpi temp2, 4
+         brne dontSubtract
+         ldi temp2, 1 // I know it's 4, so 4-3 = 1
+         dontSubtract:
+      
+         cpi data, '2' // here's my huge IF statement
+         brne not1
+         ldi data, 'A'
+         add data, temp2 // temp2 stores how many times u've pressed it
+         dec data // subtract, because 1 instance of '1' is A not B.
+         not1:
+
+         cpi data, '3' 
+         brne not2
+         ldi data, 'D'
+         add data, temp2
+         dec data         
+         not2:
+
+         cpi data, '4'
+         brne not3
+         ldi data, 'G'
+         add data, temp2
+         dec data
+         not3:
+
+         cpi data, '5'
+         brne not4
+         ldi data, 'J'
+         add data, temp2
+         dec data
+         not4:
+
+         cpi data, '6'
+         brne not5
+         ldi data, 'M'
+         add data, temp2
+         dec data
+         not5:
+
+         cpi data, '7'
+         brne not7
+         ldi data, 'P'
+         add data, temp2
+         dec data
+         not7:
+
+         cpi data, '8'
+         brne not8
+         ldi data, 'T'
+         add data, temp2
+         dec data
+         not8:
+
+         cpi data, '9'
+         brne not9
+         ldi data, 'W'
+         add data, temp2
+         dec data
+         not9:
+
+         cpi data, '*'
+         brne notAstrisk
+         ldi data, ' '
+         // also move the LCD pointer forward, and set it back to normal mode
+         ldi temp2, 0 // clear the number of times we've read
+         notAstrisk:
+         // TODO Send command to write but not increment pointer
+
+         // The above don't need escapes because they are all guarded.
+         // Draw this character to the LCD, but don't increment the pointer
+               ldi data, '('
+               rcall lcd_wait_busy
+         rcall lcd_write_data// so write over whatever we have.
+
+         rcall lcd_wait_busy
+         rcall lcd_write_data
+         jmp processLoop
+
+      notReadingRightNow:
+         inc temp2 // WE'RE NOW READING
+         st Z, data // remember what it was we were reading
+         jmp processLoop
+
+   quitLetterInput:
+
+   pop temp2
+   pop temp
+   out SREG, temp
+   pop temp
+   pop data
+   pop ZL
+   pop ZH
+
+
+ret
 
 
 /********************************************************************/
 /********** KEYPAD CODE ABOVE THIS POINT ****************************/
 /********************************************************************/
+
+/********************************************************************/
+/********** ARRAY MANIPULATION CODE *********************************/
+/********************************************************************/
+writeDataToArray:
+	push temp
+	push r26
+	push r27
+
+	ldi r26, low(array) ; grab a handle to the array
+	ldi r27, high(array)
+
+	ldi temp, 0
+	; Go forward "parameter" indexes
+	find_parameter_index :
+		cp temp, arrayIndex
+		breq find_parameter_index_skip
+		adiw r26, 1 ; increment the poiner
+		inc temp
+		jmp find_parameter_index
+
+	find_parameter_index_skip :
+
+		st X, arrayData
+
+		pop r27
+		pop r26
+		pop temp
+ret
+
+readDataArray:
+	push temp
+	push r26
+	push r27
+
+	ldi r26, low(array) ; grab a handle to the array
+	ldi r27, high(array)
+
+	ldi temp, 0
+	; Go forward "parameter" indexes
+	find_parameter_index2 :
+		cp temp, arrayIndex
+		breq find_parameter_index_skip2
+		adiw r26, 1 ; increment the poiner
+		inc temp
+		jmp find_parameter_index2
+
+	find_parameter_index_skip2 :
+
+		ld arrayData, X
+
+		pop r27
+		pop r26
+		pop temp
+ret
+
+setPointerToStation:
+	push temp
+	mov temp, stationNumber
+	push temp
+
+	ldi r26, low(array) ; grab a handle to the array
+	ldi r27, high(array)
+
+	check_station_number:
+	cpi stationNumber, 1
+	breq skip_ten_loop
+
+		ldi temp, 0
+		; Go forward "parameter" indexes
+		find_parameter_index3 :
+			cpi temp, 10
+			breq find_parameter_index_skip3
+			adiw r26, 1 ; increment the poiner
+			inc temp
+			jmp find_parameter_index3
+
+		find_parameter_index_skip3 :
+
+			subi stationNumber, 1
+			jmp check_station_number
+	skip_ten_loop:
+
+		pop temp
+		mov temp, stationNumber
+		pop temp
+
+ret
