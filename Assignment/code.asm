@@ -34,13 +34,19 @@
    .org 0x690
 wrapperStorage: .byte 1
    .org 0x700
-   wrapperPreviousChar: .byte 1
+wrapperPreviousChar: .byte 1
 	.org 0x300
 numberOfStations: .byte 1
 	.org 0x301
 stationCounter: .byte 1
    .org 0x302
 tempIndex: .byte 1
+   .org 0x303
+motorIsRunning: .byte 1
+   .org 0x304
+stopTime: .byte 1
+   .org 0x305
+stopNextStation: .byte 1
    .org 0x100
 array: .byte 250 ; 100 x 1 byte numbers
 
@@ -54,7 +60,7 @@ jmp Default ; IRQ3 Handler
 jmp Default ; IRQ4 Handler
 jmp Default ; IRQ5 Handler
 jmp EXT_INT6 ; IRQ6 Handler
-jmp Default ; IRQ7 Handler
+jmp EXT_INT7 ; IRQ7 Handler
 jmp Default ; Timer2 Compare Handler
 jmp Default ; Timer2 Overflow Handler
 jmp Default ; Timer1 Capture Handler
@@ -130,12 +136,12 @@ ldi data, LCD_DISP_CLR
 rcall lcd_write_com ; Clear Display
 rcall lcd_wait_busy ; Wait until the LCD is ready
 
-//falling edge for EXT_INT0
-ldi temp, (2<<ISC60)
+//falling edge for EXT_INT6 and 7
+ldi temp, (2<<ISC60)|(2<<ISC70)  
 out EICRB, temp
 
-//enable EXT_INT4
-ldi temp, (1<<INT6)
+//enable EXT_INT6 and 7
+ldi temp, (1<<INT6) | (1<<INT7) 
 out EIMSK, temp
 
 //motor out + led out
@@ -146,6 +152,18 @@ clr temp
 out PORTB, temp
 
 //set motor
+ldi temp, 1
+ldi ZH,  high(motorIsRunning)
+ldi ZL,  low(motorIsRunning)
+st Z, temp
+
+
+//set motor
+ldi temp, 0
+ldi ZH,  high(stopNextStation)
+ldi ZL,  low(stopNextStation)
+st Z, temp
+
 ldi temp, 100 
 out OCR0, temp
 
@@ -171,12 +189,15 @@ sei
 // String definitions for query strings
 number_of_stations_query: .db "max stat: "
 name_station_query: .db "name stat "
-
+stopped_query: .db "Stopped@Stat: "
+travelling_query: .db "Travelling  "
+units_query: .db "km"
+name_query: .db "Name: "
 
 main:
    // 1. Ask for number of stations
 
-/*
+
 	ldi ZH,  high(numberOfStations)
 	ldi ZL,  low(numberOfStations)
 
@@ -185,9 +206,13 @@ main:
 	st Z, temp
 
 
+	ldi ZH,  high(stopTime)
+	ldi ZL,  low(stopTime)
+	ldi temp, 2
+	st Z, temp
+
 
 	startLoop:
-		rcall lcd_init
 
 		ldi ZH,  high(stationCounter)
 		ldi ZL,  low(stationCounter)
@@ -195,17 +220,44 @@ main:
 		st Z, temp
 
 
-		ldi arrayIndex, 100
+		ldi arrayIndex, 110
 		mov temp2, arrayIndex
 
 	startAll :
+	
+		push temp2
+		ldi ZH,  high(numberOfStations)
+		ldi ZL,  low(numberOfStations)
+		ld temp2, Z
+		dec temp2
+
+		ldi ZH,  high(stationCounter)
+		ldi ZL,  low(stationCounter)
+		ld temp, Z
+
+		cp temp, temp2
+		brne skipResetStat2
+			ldi arrayIndex, 100
+		skipResetStat2:
+
+		pop temp2
+
+		ldi data, LCD_DISP_CLR
+		rcall lcd_wait_busy
+		rcall lcd_write_com
 
 		ldi data, LCD_GO_TO_START_1ST_LINE
 		rcall lcd_wait_busy
 		rcall lcd_write_com
 
+		ldi temp, (1<<INT6) | (1<<INT7) 
+		out EIMSK, temp
+
 		subi temp2, -10
 		push temp2
+		
+		rcall lcd_wait_busy
+		rcall writeName
 	startPrint :
 		pop temp2
 		cp arrayIndex, temp2
@@ -216,11 +268,12 @@ main:
 		mov data, arrayData
 		rcall lcd_wait_busy
 		rcall lcd_write_data
-	
+
 		inc arrayIndex
 
 		rjmp startPrint
 	exitPrint :
+
 
 		ldi ZH,  high(tempIndex)
 		ldi ZL,  low(tempIndex)
@@ -232,7 +285,7 @@ main:
 		ldi ZL,  low(stationCounter)
 		ld temp, Z
 		cpi temp, 3
-		breq done
+		breq doneFUCK
 
 		ldi data, LCD_GO_TO_START_2ND_LINE
 		rcall lcd_wait_busy
@@ -240,11 +293,18 @@ main:
 
 		ld arrayIndex, Z
 
+		rcall lcd_wait_busy
+		rcall writeTravelling
+
+
 		call readDataArray
 		mov temp, arrayData
 		push temp2
 		mov temp2, arrayData
 		rcall writeNumber
+
+		rcall lcd_wait_busy
+		rcall writeKm
 
 		ldi ZH,  high(tempIndex)
 		ldi ZL,  low(tempIndex)
@@ -261,16 +321,138 @@ main:
 		checkLoop:
 			cp temp, temp2
 			breq loopDone
+
 			rcall delaySec
-			inc temp
+
+			push temp2
+			ldi ZH,  high(motorIsRunning)
+			ldi ZL,  low(motorIsRunning)
+			ld temp2, Z
+			cpi temp2, 0
+			breq skipInc
+				inc temp
+			skipInc :
+			pop temp2
 			jmp checkLoop
 		loopDone:
 			pop temp2
+
+		jmp skipDoneFUCK
+		doneFUCK :
+			jmp done
+		skipDoneFUCK :
+
+
+
+		startMotorAndLed:
+
+			ldi temp, (0<<INT6) | (1<<INT7) 
+			out EIMSK, temp
+
+			ldi temp, (1<<TOIE0) ; =278 microseconds
+			out TIMSK, temp ; T/C0 interrupt enable
+
+			ldi counter,0 ; clearing the counter values after counting 3597 interrupts which gives us one second
+			ldi counter2,0
+			ldi counter3,0
+
+
+			ldi temp, 0
+			ldi ZH,  high(motorIsRunning)
+			ldi ZL,  low(motorIsRunning)
+			st Z, temp
+
+			//set motor
+			ldi temp, 0
+			out OCR0, temp
+
+
+		stopAtStation:
+
+			ldi data, LCD_DISP_CLR
+			rcall lcd_wait_busy
+			rcall lcd_write_com
+			
+			rcall lcd_wait_busy
+			rcall writeStopped
+
+			
+			ldi ZH,  high(stationCounter)
+			ldi ZL,  low(stationCounter)
+			ld temp, Z
+
+			push temp2
+			ldi ZL,  low(numberOfStations)
+			ldi ZL,  low(numberOfStations)
+			ld temp2, Z
+
+			inc temp
+			inc temp2
+
+			cp temp, temp2
+			brne skipResetStat
+				ldi temp, 1
+			skipResetStat :
+			
+			rcall lcd_wait_busy
+			rcall writeNumber
+
+			pop temp2
+			push temp2
+			ldi ZH,  high(stopNextStation)
+			ldi ZL,  low(stopNextStation)
+			ld temp2, Z
+
+			cpi temp2, 0
+			breq skipStop
+				
+
+				push temp
+				push temp2
+				ldi ZH,  high(stopTime)
+				ldi ZL,  low(stopTime)
+				ld temp, Z
+				ldi temp2, 0
+				checkStop :
+					cp temp, temp2
+					breq stopDone
+					
+					rcall delaySec
+
+					inc temp2
+
+					jmp checkStop
+				stopDone :
+					pop temp2
+					pop temp
+			skipStop :
+
+			pop temp2
+
+			push temp
+			ldi temp, 0
+			ldi ZH,  high(stopNextStation)
+			ldi ZL,  low(stopNextStation)
+			st Z, temp
+			pop temp
+
+		stopMotorAndLed:
+			ldi temp, (0<<TOIE0) ; =278 microseconds
+			out TIMSK, temp ; T/C0 interrupt disable
+
+
+			ldi temp, 1
+			ldi ZH,  high(motorIsRunning)
+			ldi ZL,  low(motorIsRunning)
+			st Z, temp
+			//set motor
+			ldi temp, 100
+			out OCR0, temp
+
 			jmp startAll
 	done:
-
 	jmp startLoop
-   */
+   
 end: 
 
 rjmp end
@@ -395,6 +577,11 @@ EXT_INT6:
 		ldi counter2,0
 		ldi counter3,0
 
+
+		ldi temp, 0
+		ldi ZH,  high(motorIsRunning)
+		ldi ZL,  low(motorIsRunning)
+		st Z, temp
 		//set motor
 		ldi temp, 0
 		out OCR0, temp
@@ -406,6 +593,11 @@ EXT_INT6:
 		ldi temp, (0<<TOIE0) ; =278 microseconds
 		out TIMSK, temp ; T/C0 interrupt disable
 
+
+		ldi temp, 1
+		ldi ZH,  high(motorIsRunning)
+		ldi ZL,  low(motorIsRunning)
+		st Z, temp
 		//set motor
 		ldi temp, 100
 		out OCR0, temp
@@ -427,6 +619,15 @@ EXT_INT6:
 	pop temp2
 	pop temp
 	out SREG, temp
+	pop temp
+reti
+
+EXT_INT7:
+	push temp
+	ldi temp, 1
+	ldi ZH,  high(stopNextStation)
+	ldi ZL,  low(stopNextStation)
+	st Z, temp
 	pop temp
 reti
 
@@ -665,7 +866,100 @@ lcd_write_name_station_in_data:
 
 	pop temp
 ret
-	
+
+writeStopped:
+	push temp // keep track of how many we've written
+	push data
+	ldi temp, 14
+	// According to 
+	// http://www.cse.unsw.edu.au/~cs2121/ExampleCode/lcd.asm
+	// we need to multiply it by 2...
+	ldi ZL, low(stopped_query << 1) 
+	ldi ZH, high(stopped_query << 1)
+
+	write_anotherCtl1:
+		lpm data, Z+
+		push temp
+		rcall lcd_wait_busy
+		rcall lcd_write_data
+		pop temp
+		dec temp
+	brne write_anotherCtl1
+
+	pop data
+	pop temp
+ret
+
+writeTravelling:
+	push temp // keep track of how many we've written
+	push data
+	ldi temp, 11
+	// According to 
+	// http://www.cse.unsw.edu.au/~cs2121/ExampleCode/lcd.asm
+	// we need to multiply it by 2...
+	ldi ZL, low(travelling_query << 1) 
+	ldi ZH, high(travelling_query << 1)
+
+	write_anotherCtl2:
+		lpm data, Z+
+		push temp
+		rcall lcd_wait_busy
+		rcall lcd_write_data
+		pop temp
+		dec temp
+	brne write_anotherCtl2
+
+	pop data
+	pop temp
+ret
+
+writeKm:
+	push temp // keep track of how many we've written
+	push data
+	ldi temp, 2
+	// According to 
+	// http://www.cse.unsw.edu.au/~cs2121/ExampleCode/lcd.asm
+	// we need to multiply it by 2...
+	ldi ZL, low(units_query << 1) 
+	ldi ZH, high(units_query << 1)
+
+	write_anotherCtl4:
+		lpm data, Z+
+		push temp
+		rcall lcd_wait_busy
+		rcall lcd_write_data
+		pop temp
+		dec temp
+	brne write_anotherCtl4
+
+	pop data
+	pop temp
+ret
+
+
+writeName:
+	push temp // keep track of how many we've written
+	push data
+	ldi temp, 6
+	// According to 
+	// http://www.cse.unsw.edu.au/~cs2121/ExampleCode/lcd.asm
+	// we need to multiply it by 2...
+	ldi ZL, low(name_query << 1) 
+	ldi ZH, high(name_query << 1)
+
+	write_anotherCtl5:
+		lpm data, Z+
+		push temp
+		rcall lcd_wait_busy
+		rcall lcd_write_data
+		pop temp
+		dec temp
+	brne write_anotherCtl5
+
+	pop data
+	pop temp
+ret
+
 ; == Takes in (in 'temp'), an unsigned 8 bit number and prints it.
 
 writeNumber:
@@ -1304,3 +1598,5 @@ InitData:
 
 
 ret
+
+
