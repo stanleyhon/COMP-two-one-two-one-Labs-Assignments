@@ -54,6 +54,9 @@
    .org 0x690
    wrapperStorage: .byte 1
 
+   .org 0x700
+   wrapperPreviousChar: .byte 1
+
    .org 0x100
 array: .byte 200 ; 100 x 1 byte numbers
 
@@ -92,6 +95,8 @@ jmp Timer0 ; Timer0 Overflow Handler
 .equ LCD_ENTRY_SET = 0b00000100
 .equ LCD_ADDR_SET = 0b10000000
 
+.equ LCD_CURSOR_GO_BACK_1 = 0b00010000 // 00 means, send cursor back 1. (after the 1) 
+.equ LCD_CURSOR_GO_FORW_1 = 0b00010100 // 
 // keypadRead modes
 .equ LETTER_MODE = 1
 .equ NUMBER_MODE = 2
@@ -100,7 +105,7 @@ jmp Timer0 ; Timer0 Overflow Handler
 .equ LCD_GO_TO_START_2ND_LINE = 0b11000000 // 0100 0000 is 41
 										   // 8th bit is meant to be a 1
 										   // lcd_write_com automatically writes 0,0 to rs rw
-.equ WRITE_IN_SAME_SPOT = 0b0000 
+
 
 ;LCD function bits and constants
 .equ LCD_BF = 7
@@ -193,9 +198,15 @@ main:
 	rcall lcd_wait_busy
 	rcall lcd_write_com
 	// CHANGE THE POINTER TO THE SECOND LINE
+   
+   inputLoop:
+   cpi data, '#'
+   breq end
+	rcall letter_input_wrapper
+   jmp inputLoop	
 
 
-	rcall letter_input_wrapper	
+
 
 end: 
 
@@ -744,9 +755,6 @@ breq letters
 cpi row, 3 ; if row is 3 we have a symbol or 0
 breq symbols
 
-cpi keypadMode, NUMBER_MODE
-brne read_another_key
-
 mov temp, row ; otherwise we have a number (1-9)
 lsl temp ; temp = row * 2
 add temp, row ; temp = row * 3
@@ -761,31 +769,26 @@ pop temp2
 
 jmp convert_end
 letters:
-// letter buttons should never be used.
-jmp read_another_key // uses the hack below
-
-jmp no_jmp
-read_another_key: 
-   ldi data, '.'
-   ret
-
-no_jmp:
-
+	ldi temp, 'A'
+	add temp, row ; increment from 0xA by the row value
+	jmp convert_end
 
 symbols:
-cpi col, 0 ; allow stars to pass through regardless of mode
+cpi col, 0 ; star
 breq star
 
-cpi col, 1 ; or if we have zero
-ldi temp, '0'
-jmp convert_end
+cpi col, 1 ; zero
+breq zero
 
-cpi col, 2
-ldi temp, '#' ; allow astrisks to pass through regardless of mode
+ldi temp, '#' ; astrisk only left
 jmp convert_end
 
 star:
-ldi temp, '*' 
+ldi temp, '*'
+jmp convert_end
+
+zero:
+ldi temp, '0'
 jmp convert_end
 
 convert_end:
@@ -842,42 +845,51 @@ ret ; return to caller
 // This function wraps "scan_for_key" and implements SMS-like
 // text input functionality - motherfucker.
 letter_input_wrapper:
-
    push ZH
    push ZL
-   push data
    push temp
    in temp, SREG
    push temp
    push temp2
 
-   ldi temp2, 0 // WE ARE NOT IN THE MIDDLE OF READING A LETTER
-   
-
-   ldi keypadMode, LETTER_MODE // ensure letter mode
-
    ldi ZH, high(wrapperStorage)
    ldi ZL, low(wrapperStorage)
+   ldi data, '!'
+   st Z, data // store an initial character
+
+   ldi temp2, 0 // Temp2 indicates if we've already printed something, 
+   // e.g. we're cycling through something.
+
+   // temp is used to store what we read in the last turn 
+   // through memory access
+   
+   ldi keypadMode, LETTER_MODE // ensure letter mode
 
    processLoop:
+      ldi ZH, high(wrapperPreviousChar)
+      ldi ZL, low(wrapperPreviousChar)
+      st Z, temp2
+
       rcall scan_for_key // get an input
       
+      ldi ZH, high(wrapperPreviousChar)
+      ldi ZL, low(wrapperPreviousChar)
+      ld temp2, Z
+      
       cpi data, '#' // If someone pressed a hash, pass it straight through
-      // TODO: BRANCH OUT OF RANGE SHIT FUCK DICK breq quitLetterInput
-
-      cpi temp2, 0
-      breq notReadingRightNow
+      breq quitLetterInputMidJump
 
       // So we're reading something now, grab what it was.
-
+      ldi ZH, high(wrapperStorage)
+      ldi ZL, low(wrapperStorage)
       ld temp, Z // grab what we previously read
 
       // compare it to what we've gotten
       cp temp, data
-      breq pressedAgain
-      // else pressedNew
-      ldi temp2, 1 // so we've only pressed it once
-
+      breq pressedAgain // if they're equal - we pressed again.
+      // else user pressed a new thing.
+      ldi temp2, 0
+      st Z, data // remember what it was we were reading
 
       pressedAgain:
          inc temp2
@@ -889,41 +901,47 @@ letter_input_wrapper:
          brne dontSubtract
          ldi temp2, 1 // I know it's 4, so 4-3 = 1
          dontSubtract:
-      
+
          cpi data, '2' // here's my huge IF statement
-         brne not1
+         brne not2
          ldi data, 'A'
          add data, temp2 // temp2 stores how many times u've pressed it
          dec data // subtract, because 1 instance of '1' is A not B.
-         not1:
+         not2:
 
          cpi data, '3' 
-         brne not2
+         brne not3
          ldi data, 'D'
          add data, temp2
          dec data         
-         not2:
-
-         cpi data, '4'
-         brne not3
-         ldi data, 'G'
-         add data, temp2
-         dec data
          not3:
 
-         cpi data, '5'
+         cpi data, '4'
          brne not4
-         ldi data, 'J'
+         ldi data, 'G'
          add data, temp2
          dec data
          not4:
 
-         cpi data, '6'
+         cpi data, '5'
          brne not5
-         ldi data, 'M'
+         ldi data, 'J'
          add data, temp2
          dec data
          not5:
+
+         // Workaround for 
+         jmp protected
+         quitLetterInputMidJump:
+         jmp quitLetterInput
+         protected:
+
+         cpi data, '6'
+         brne not6
+         ldi data, 'M'
+         add data, temp2
+         dec data
+         not6:
 
          cpi data, '7'
          brne not7
@@ -946,28 +964,39 @@ letter_input_wrapper:
          dec data
          not9:
 
+         cpi data, '0'
+         brne not0
+         ldi data, 'Z'
+         not0:
+
          cpi data, '*'
          brne notAstrisk
-         ldi data, ' '
+         ldi data, '*'
+         push data
+         ldi data, LCD_CURSOR_GO_FORW_1
+         rcall lcd_wait_busy ; Wait until the LCD is ready
+         rcall lcd_write_com
+         pop data
          // also move the LCD pointer forward, and set it back to normal mode
-         ldi temp2, 0 // clear the number of times we've read
+         jmp quitLetterInput // and finish.
          notAstrisk:
-         // TODO Send command to write but not increment pointer
+
+                  // TODO Send command to write but not increment pointer
+
 
          // The above don't need escapes because they are all guarded.
          // Draw this character to the LCD, but don't increment the pointer
-               ldi data, '('
-               rcall lcd_wait_busy
-         rcall lcd_write_data// so write over whatever we have.
-
+         push temp2
          rcall lcd_wait_busy
-         rcall lcd_write_data
-         jmp processLoop
+         rcall lcd_write_data// so write over whatever we have.
+         pop temp2
 
-      notReadingRightNow:
-         inc temp2 // WE'RE NOW READING
-         st Z, data // remember what it was we were reading
-         jmp processLoop
+         push data
+         ldi data, LCD_CURSOR_GO_BACK_1
+         rcall lcd_wait_busy ; Wait until the LCD is ready
+         rcall lcd_write_com
+         pop data
+      jmp processLoop
 
    quitLetterInput:
 
@@ -975,7 +1004,6 @@ letter_input_wrapper:
    pop temp
    out SREG, temp
    pop temp
-   pop data
    pop ZL
    pop ZH
 
