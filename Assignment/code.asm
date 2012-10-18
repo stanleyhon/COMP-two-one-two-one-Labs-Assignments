@@ -26,7 +26,7 @@
 ;.def var = r26 x // used above
 ;.def var = r27 x // used above
 ;.def var = r28 y
-;.def var = r29 y
+.def test = r29 
 ;.def var = r30 z
 .def keypadMode = r31
 
@@ -35,20 +35,26 @@
 wrapperStorage: .byte 1
    .org 0x700
 wrapperPreviousChar: .byte 1
-	.org 0x300
+	.org 0x400
 numberOfStations: .byte 1
-	.org 0x301
+	.org 0x402
 stationCounter: .byte 1
-   .org 0x302
+   .org 0x404
 tempIndex: .byte 1
-   .org 0x303
+   .org 0x406
 motorIsRunning: .byte 1
-   .org 0x304
+   .org 0x408
 stopTime: .byte 1
-   .org 0x305
+   .org 0x410
 stopNextStation: .byte 1
    .org 0x100
 array: .byte 250 ; 100 x 1 byte numbers
+
+   .org 0x780
+wrapperLastRead: .byte 1
+
+   .org 0x750
+distanceFromStation: .byte 1
 
 .cseg
 
@@ -136,6 +142,264 @@ ldi data, LCD_DISP_CLR
 rcall lcd_write_com ; Clear Display
 rcall lcd_wait_busy ; Wait until the LCD is ready
 
+
+// KEYPAD
+ldi temp, PORTDDIR ; columns are outputs, rows are inputs
+out DDRD, temp
+
+
+call InitData
+sei
+
+// String definitions for query strings
+number_of_stations_query: .db "max stat: "
+name_station_query: .db "name stat "
+stopped_query: .db "Stopped@Stat: "
+travelling_query: .db "Travelling  "
+units_query: .db "km"
+name_query: .db "Name: "
+distance_from_station_query_1: .db "dist from " // 10
+complete: .db "COMPLETE" // 8
+
+
+main:
+   // 1. Ask for number of stations
+   rcall lcd_wait_busy
+   rcall lcd_write_number_of_stations_query 
+   // Go to new line
+   ldi data, LCD_GO_TO_START_2ND_LINE
+   rcall lcd_wait_busy
+   rcall lcd_write_com
+
+   ldi data, '!' // make sure not #
+   readStationNum:
+      rcall scan_for_key // read a key
+      // TODO: Only allow 1-10
+      // TODO: ALLOW 10
+      // CURRENTLY ONLY ALLOWS 1 CHAR
+      // This below needs to be replaced by a function
+      cpi data, '#'
+      breq finishedReadingStationNumber
+      cpi data, '1'
+      breq correct
+      cpi data, '2'
+      breq correct
+      cpi data, '3'
+      breq correct
+      cpi data, '4'
+      breq correct
+      cpi data, '5'
+      breq correct
+      cpi data, '6'
+      breq correct
+      cpi data, '7'
+      breq correct
+      cpi data, '8'
+      breq correct
+      cpi data, '9'
+      breq correct
+      cpi data, '0'
+      breq correct
+      jmp readStationNum
+      correct:
+      rcall lcd_wait_busy
+      rcall lcd_write_data
+
+      ldi ZH, high (numberOfStations)
+      ldi ZL, low (numberOfStations)
+      subi data, '0'
+      st Z, data
+
+   finishedReadingStationNumber:
+
+
+   ldi data, LCD_DISP_CLR
+   rcall lcd_wait_busy
+   rcall lcd_write_com
+   // 2. Loop and find out names for all stations
+
+   ldi temp2, 0 // temp2 counts the one we're up to
+   ldi arrayIndex, 100
+
+   readAName:
+
+   inc temp2
+   mov data, temp2 // put the one we're up to
+   rcall lcd_wait_busy
+   rcall lcd_write_name_station_in_data
+   // Go to new line
+   ldi data, LCD_GO_TO_START_2ND_LINE
+   rcall lcd_wait_busy
+   rcall lcd_write_com
+   // read a string
+      readAChar:
+         rcall letter_input_wrapper
+
+         cpi data, '#'
+         breq finishReadingString
+
+         cpi data, '*'
+         breq dontWriteToArrayInPhase2
+         push temp2
+         // WRITE THIS CHARACTER IN
+         mov arrayData, data
+         rcall writeDataToArray
+         inc arrayIndex
+         // TODO: 10 CHARACTER LIMIT
+         dontWriteToArrayInPhase2:
+         // TODO: Implement 10 chracter limit.
+         jmp readAChar
+         
+
+   finishReadingString:
+
+   ldi data, LCD_DISP_CLR
+   rcall lcd_wait_busy
+   rcall lcd_write_com
+
+   ldi ZH, high(numberOfStations)
+   ldi ZL, low(numberOfStations)
+   ld temp, Z // number of stations stored in temp
+   cp temp, temp2 // see if we've done enough 
+   breq finishReadingNames
+
+   jmp readAName
+
+   finishReadingNames:
+   /*******************************************************/
+   // 3. Loop and find out distances between all stations
+   /*******************************************************/
+   ldi arrayIndex, 0 // distances are 0-10
+   ldi ZH, high(distanceFromStation)
+   ldi ZL, low(distanceFromStation)
+   ldi temp2, 0 // temp counts the one we're going from
+   st Z, temp2
+   
+   askForDistance:
+      //Clear display
+      ldi data, LCD_DISP_CLR
+      rcall lcd_wait_busy
+      rcall lcd_write_com
+      
+      // Get our info
+      ldi ZH, high(distanceFromStation)
+      ldi ZL, low(distanceFromStation)
+      ld temp2, Z
+      inc temp2
+      st Z, temp2
+
+      mov data, temp2
+
+      rcall lcd_wait_busy
+      rcall lcd_write_ask_distance_from_data
+
+      // Go to new line
+      ldi data, LCD_GO_TO_START_2ND_LINE
+      rcall lcd_wait_busy
+      rcall lcd_write_com
+
+      readNextChar:
+
+      rcall scan_for_key // read a key
+      // TODO: Only allow 1-10
+      // TODO: ALLOW 10
+      // CURRENTLY ONLY ALLOWS 1 CHAR
+      // This below needs to be replaced by a function
+      cpi data, '#'
+      breq finishReadingDistance
+      cpi data, '1'
+      breq correctDistance
+      cpi data, '2'
+      breq correctDistance
+      cpi data, '3'
+      breq correctDistance
+      cpi data, '4'
+      breq correctDistance
+      cpi data, '5'
+      breq correctDistance
+      cpi data, '6'
+      breq correctDistance
+      cpi data, '7'                                                                                                                    
+      breq correctDistance
+      cpi data, '8'
+      breq correctDistance
+      cpi data, '9'
+      breq correctDistance
+      cpi data, '0'
+      breq correctDistance
+      jmp askForDistance
+      correctDistance:
+         push data
+         rcall lcd_wait_busy
+         rcall lcd_write_data
+         pop data
+         subi data, '0' // translate to integer
+         
+         mov arrayData, data
+         rcall writeDataToArray
+         inc arrayIndex
+
+         jmp readNextChar
+      // WRITE THE DISTNACE IN DATA TO ARRAY
+
+      // TODO: IMPLEMENT WRONG INPUT
+
+
+      finishReadingDistance:
+         // see if we need to ask again.
+         ldi ZH, high(numberOfStations)
+         ldi ZL, low(numberOfStations)
+         ld temp, Z
+
+         ldi ZH, high(distanceFromStation)
+         ldi ZL, low(distanceFromStation)
+         ld temp2, Z
+
+         cp temp2, temp
+         breq actuallyFinish
+         jmp askForDistance
+
+   actuallyFinish:
+         ldi data, LCD_DISP_CLR
+         rcall lcd_wait_busy
+         rcall lcd_write_com
+      
+   // 4. Show configuration complete page.
+   rcall lcd_write_complete
+
+/*
+   ldi temp, 5
+   push temp
+   startDelaySec:
+      pop temp
+      cpi temp, 0
+      breq skipDelaySec
+      push temp
+      rcall delaySec
+      
+      
+      ldi data, LCD_GO_TO_START_2ND_LINE
+      rcall lcd_wait_busy
+      rcall lcd_write_com
+      
+
+      rcall lcd_wait_busy
+      pop temp
+      rcall writeNumber
+
+      dec temp
+      push temp
+      jmp startDelaySec
+   skipDelaySec :   
+*/
+   ldi data, LCD_DISP_CLR
+   rcall lcd_wait_busy
+   rcall lcd_write_com
+
+ // CTL CODE
+
+//================================================================
+
 //falling edge for EXT_INT6 and 7
 ldi temp, (2<<ISC60)|(2<<ISC70)  
 out EICRB, temp
@@ -164,7 +428,7 @@ ldi ZH,  high(stopNextStation)
 ldi ZL,  low(stopNextStation)
 st Z, temp
 
-ldi temp, 100 
+ldi temp, 100
 out OCR0, temp
 
 //Timer enable (normally enabled on EXT_INT0
@@ -178,32 +442,15 @@ CS00 = Prescaler = 8
 */
 out TCCR0, temp
 
-// KEYPAD
-ldi temp, PORTDDIR ; columns are outputs, rows are inputs
-out DDRD, temp
 
 
-call InitData
-sei
-
-// String definitions for query strings
-number_of_stations_query: .db "max stat: "
-name_station_query: .db "name stat "
-stopped_query: .db "Stopped@Stat: "
-travelling_query: .db "Travelling  "
-units_query: .db "km"
-name_query: .db "Name: "
-
-main:
-   // 1. Ask for number of stations
 
 
-	ldi ZH,  high(numberOfStations)
-	ldi ZL,  low(numberOfStations)
+//==============================================================
 
-	// not using numberOfStations atm
-	ldi temp, 3
-	st Z, temp
+
+
+
 
 
 	ldi ZH,  high(stopTime)
@@ -238,9 +485,17 @@ main:
 		cp temp, temp2
 		brne skipResetStat2
 			ldi arrayIndex, 100
+
+         pop temp2
+         mov temp2, arrayIndex
+         subi temp2, -10
+
+
+         rjmp fuckPop
 		skipResetStat2:
 
 		pop temp2
+      fuckPop :
 
 		ldi data, LCD_DISP_CLR
 		rcall lcd_wait_busy
@@ -284,12 +539,22 @@ main:
 		ldi ZH,  high(stationCounter)
 		ldi ZL,  low(stationCounter)
 		ld temp, Z
-		cpi temp, 3
+      
+
+      ldi ZH,  high(numberOfStations)
+   	ldi ZL,  low(numberOfStations)
+   	ld test, Z
+
+		cp temp, test
 		breq doneFUCK
 
 		ldi data, LCD_GO_TO_START_2ND_LINE
 		rcall lcd_wait_busy
 		rcall lcd_write_com	
+
+
+		ldi ZH,  high(stationCounter)
+		ldi ZL,  low(stationCounter)
 
 		ld arrayIndex, Z
 
@@ -452,7 +717,6 @@ main:
 			jmp startAll
 	done:
 	jmp startLoop
-   
 end: 
 
 rjmp end
@@ -863,8 +1127,186 @@ lcd_write_name_station_in_data:
 	rcall lcd_wait_busy
 	rcall lcd_write_data
 
+	pop temp
+ret
+
+// Writes COMPLETE
+lcd_write_complete:
+	push temp // keep track of how many we've written
+	ldi temp, 8
+
+	// According to 
+	// http://www.cse.unsw.edu.au/~cs2121/ExampleCode/lcd.asm
+	// we need to multiply it by 2...
+	ldi ZL, low(complete << 1) 
+	ldi ZH, high(complete << 1)
+
+	write_anotherComplete:
+		lpm data, Z+
+		push temp
+		rcall lcd_wait_busy
+		rcall lcd_write_data
+		pop temp
+		dec temp
+	brne write_anotherComplete
 
 	pop temp
+ret
+
+
+// Ask for distance from the station in data
+lcd_write_ask_distance_from_data:
+	push temp // keep track of how many we've written
+	ldi temp, 10 // second thing is 3
+	push ZL
+	push ZH
+   push data
+   push data // PUSHING TWICE ON PURPOSE, will be poppped as neccesary.
+
+	// According to 
+	// http://www.cse.unsw.edu.au/~cs2121/ExampleCode/lcd.asm
+	// we need to multiply it by 2...
+	ldi ZL, low(distance_from_station_query_1 << 1) 
+	ldi ZH, high(distance_from_station_query_1 << 1)
+
+   // Write the first part
+	write_another4:
+		lpm data, Z+
+		push temp
+		rcall lcd_wait_busy
+		rcall lcd_write_data
+		pop temp
+		dec temp
+	brne write_another4
+
+
+	pop data
+
+   // Write the station from
+	rcall lcd_wait_busy
+	mov temp, data
+	rcall writeNumber
+
+   ldi data, '-'
+   rcall lcd_wait_busy
+   rcall lcd_write_data
+
+	pop data 
+
+   // see if this number is equal to the length
+   ldi ZL, low(numberOfStations)
+   ldi ZH, high(numberOfStations)
+   ld temp, Z
+   cp temp, data
+   breq printOne
+
+   // write the next number
+   inc data
+	rcall lcd_wait_busy
+	mov temp, data
+	rcall writeNumber
+   jmp colonTime
+   
+   // Prints to station 1 if current station is last station
+   printOne:
+   ldi data, '1'
+   rcall lcd_wait_busy
+   rcall lcd_write_data
+   
+   colonTime:
+   // write colon
+   ldi data, ':'
+   rcall lcd_wait_busy
+   rcall lcd_write_data
+
+
+   pop ZH
+	pop ZL
+	pop temp
+ret
+	
+; == Takes in (in 'temp'), an unsigned 8 bit number and prints it.
+
+writeNumber:
+	push temp  ; holds the current most significant digit
+	push temp2 ; holds a copy of the original value
+	push orig  ; holds the original value
+
+	mov temp2, temp ; 
+	mov orig, temp ; 
+
+	// 100
+	
+	cpi orig, 100 ; if value < 100, skip
+	brlo skipHundreds
+
+	clr data ;data = 0
+	ldi temp, 100 ; MSD temp = 100
+
+	hundredLoop:
+
+	cp temp2, temp ; while temp2 >= 100
+	brlo exitHundreds
+
+	sub temp2, temp ;temp2 -= temp
+	inc data
+	rjmp hundredLoop
+	exitHundreds:
+
+
+	subi data, (-'0')
+    rcall lcd_wait_busy
+	rcall lcd_write_data
+
+	skipHundreds:
+
+	// 10s
+	cpi orig, 10 ; if data < 10, skip
+	brlo skip_dozens
+
+	ldi temp, 10 ; get 10s
+	clr data ; data = 0
+
+	dozens_loop:
+
+	cp temp2, temp ; while temp2 >= 10
+	brlo exit_dozens
+
+	sub temp2, temp
+	inc data
+
+	rjmp dozens_loop
+	exit_dozens:
+
+
+	subi data, (-'0')
+    rcall lcd_wait_busy
+	rcall lcd_write_data
+
+	skip_dozens:
+
+	// 1
+	ldi temp, 1 ; get 10s
+	ldi data, 0
+	onesLoop:
+	cp temp2, temp ; while temp2 >= 1
+	brlo exit_ones
+
+	sub temp2, temp
+	inc data
+
+	rjmp onesLoop
+	exit_ones:
+
+	subi data, (-'0')
+    rcall lcd_wait_busy
+	rcall lcd_write_data
+
+
+	pop orig
+	pop temp2
+  	pop temp
+
 ret
 
 writeStopped:
@@ -872,7 +1314,7 @@ writeStopped:
 	push data
 	ldi temp, 14
 	// According to 
-	// http://www.cse.unsw.edu.au/~cs2121/ExampleCode/lcd.asm
+	// http://www.cse.unsw.edu.au/~cs2121/ExampleCode/lcd.lasm
 	// we need to multiply it by 2...
 	ldi ZL, low(stopped_query << 1) 
 	ldi ZH, high(stopped_query << 1)
@@ -958,90 +1400,6 @@ writeName:
 
 	pop data
 	pop temp
-ret
-
-; == Takes in (in 'temp'), an unsigned 8 bit number and prints it.
-
-writeNumber:
-	push temp  ; holds the current most significant digit
-	push temp2 ; holds a copy of the original value
-	push orig  ; holds the original value
-
-	mov temp2, temp ; 
-	mov orig, temp ; 
-
-	// 100
-	
-	cpi orig, 100 ; if value < 100, skip
-	brlo skipHundreds
-
-	clr data ;data = 0
-	ldi temp, 100 ; MSD temp = 100
-
-	hundredLoop:
-
-	cp temp2, temp ; while temp2 >= 100
-	brlo exitHundreds
-
-	sub temp2, temp ;temp2 -= temp
-	inc data
-	rjmp hundredLoop
-	exitHundreds:
-
-
-	subi data, (-'0')
-    rcall lcd_wait_busy
-	rcall lcd_write_data
-
-	skipHundreds:
-
-	// 10s
-	cpi orig, 10 ; if data < 10, skip
-	brlo skip_dozens
-
-	ldi temp, 10 ; get 10s
-	clr data ; data = 0
-
-	dozens_loop:
-
-	cp temp2, temp ; while temp2 >= 10
-	brlo exit_dozens
-
-	sub temp2, temp
-	inc data
-
-	rjmp dozens_loop
-	exit_dozens:
-
-
-	subi data, (-'0')
-    rcall lcd_wait_busy
-	rcall lcd_write_data
-
-	skip_dozens:
-
-	// 1
-	ldi temp, 1 ; get 10s
-	ldi data, 0
-	onesLoop:
-	cp temp2, temp ; while temp2 >= 1
-	brlo exit_ones
-
-	sub temp2, temp
-	inc data
-
-	rjmp onesLoop
-	exit_ones:
-
-	subi data, (-'0')
-    rcall lcd_wait_busy
-	rcall lcd_write_data
-
-
-	pop orig
-	pop temp2
-  	pop temp
-
 ret
 
 /********************************************************************/
@@ -1329,7 +1687,12 @@ letter_input_wrapper:
 
          cpi data, '*'
          brne notAstrisk
-         ldi data, '*'
+         ldi ZH, high(wrapperLastRead)
+         ldi ZL, low(wrapperLastRead)
+         ld data, Z
+         ldi temp, ' '
+         st Z, temp
+         //ldi data, '*'
          push data
          ldi data, LCD_CURSOR_GO_FORW_1
          rcall lcd_wait_busy ; Wait until the LCD is ready
@@ -1338,8 +1701,11 @@ letter_input_wrapper:
          // also move the LCD pointer forward, and set it back to normal mode
          jmp quitLetterInput // and finish.
          notAstrisk:
-
-                  // TODO Send command to write but not increment pointer
+            
+            // remember character last read
+            ldi ZH, high(wrapperLastRead)
+            ldi ZL, low(wrapperLastRead)
+            st Z, data
 
 
          // The above don't need escapes because they are all guarded.
@@ -1596,7 +1962,92 @@ InitData:
 		ldi arrayData, '3'
 		call writeDataToArray
 
+	ldi arrayIndex, 3
+	ldi arrayData, 1
+	call writeDataToArray
+		
+		ldi arrayIndex, 130
+		ldi arrayData, 'S'
+		call writeDataToArray
+
+		ldi arrayIndex, 131 
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 132 
+		ldi arrayData, 'a'
+		call writeDataToArray
+
+		ldi arrayIndex, 133
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 134
+		ldi arrayData, 'i'
+		call writeDataToArray
+
+		ldi arrayIndex, 135
+		ldi arrayData, 'o'
+		call writeDataToArray
+
+		ldi arrayIndex, 136
+		ldi arrayData, 'n'
+		call writeDataToArray
+
+		ldi arrayIndex, 137
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 138 
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 139 
+		ldi arrayData, '4'
+		call writeDataToArray
+
+	ldi arrayIndex, 4
+	ldi arrayData, 1
+	call writeDataToArray
+		
+		ldi arrayIndex, 140
+		ldi arrayData, 'S'
+		call writeDataToArray
+
+		ldi arrayIndex, 141 
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 142 
+		ldi arrayData, 'a'
+		call writeDataToArray
+
+		ldi arrayIndex, 143
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 144
+		ldi arrayData, 'i'
+		call writeDataToArray
+
+		ldi arrayIndex, 145
+		ldi arrayData, 'o'
+		call writeDataToArray
+
+		ldi arrayIndex, 146
+		ldi arrayData, 'n'
+		call writeDataToArray
+
+		ldi arrayIndex, 147
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 148 
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 149 
+		ldi arrayData, '5'
+		call writeDataToArray
 
 ret
-
-
