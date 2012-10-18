@@ -5,27 +5,7 @@
 // PB1         -> doubled up on PD0
 // Motor       -> PB4
 
-// Assignment Version X
-// - Additional features/changes here
-
-// Assignment Version 0.1
-// - Only does basic LED proof-of-concept
 .include "m64def.inc"
-
-// Assignment Version 0.2a - Stanley
-// - Added functional LCD
-// - Working on printing query string
-
-// Assignment Version 0.3 - Stanley
-// - General keypad functionality working
-// - Merged.
-
-// TODO:
-// DONE - both number and letter mode should allow # for finish entering data (e.g. enter your name, [name]#)
-// DONE - letter mode should allow for * to confirm the character, (e.g. 222* = C)
-// - a way to access all the alphabetical letters
-//    + perhaps a wrapper over scan_for_key, that interprets data properly.
-// - 
 .def temp = r16
 .
 .def temp2 = r26
@@ -52,13 +32,17 @@
 
 .dseg
    .org 0x690
-   wrapperStorage: .byte 1
-
+wrapperStorage: .byte 1
    .org 0x700
    wrapperPreviousChar: .byte 1
-
+	.org 0x300
+numberOfStations: .byte 1
+	.org 0x301
+stationCounter: .byte 1
+   .org 0x302
+tempIndex: .byte 1
    .org 0x100
-array: .byte 200 ; 100 x 1 byte numbers
+array: .byte 250 ; 100 x 1 byte numbers
 
 .cseg
 
@@ -105,7 +89,7 @@ jmp Timer0 ; Timer0 Overflow Handler
 .equ LCD_GO_TO_START_2ND_LINE = 0b11000000 // 0100 0000 is 41
 										   // 8th bit is meant to be a 1
 										   // lcd_write_com automatically writes 0,0 to rs rw
-
+.equ LCD_GO_TO_START_1ST_LINE = 0b10000000
 
 ;LCD function bits and constants
 .equ LCD_BF = 7
@@ -180,6 +164,8 @@ out TCCR0, temp
 ldi temp, PORTDDIR ; columns are outputs, rows are inputs
 out DDRD, temp
 
+
+call InitData
 sei
 
 // String definitions for query strings
@@ -188,26 +174,103 @@ name_station_query: .db "name stat "
 
 
 main:
+   // 1. Ask for number of stations
 
-	rcall lcd_wait_busy
-	ldi data, 10
-	rcall lcd_write_name_station_in_data
-	// WRITE THE FIRST LINE
+/*
+	ldi ZH,  high(numberOfStations)
+	ldi ZL,  low(numberOfStations)
 
-	ldi data, LCD_GO_TO_START_2ND_LINE
-	rcall lcd_wait_busy
-	rcall lcd_write_com
-	// CHANGE THE POINTER TO THE SECOND LINE
-   
-   inputLoop:
-   cpi data, '#'
-   breq end
-	rcall letter_input_wrapper
-   jmp inputLoop	
+	// not using numberOfStations atm
+	ldi temp, 3
+	st Z, temp
 
 
 
+	startLoop:
+		rcall lcd_init
 
+		ldi ZH,  high(stationCounter)
+		ldi ZL,  low(stationCounter)
+		ldi temp, 0
+		st Z, temp
+
+
+		ldi arrayIndex, 100
+		mov temp2, arrayIndex
+
+	startAll :
+
+		ldi data, LCD_GO_TO_START_1ST_LINE
+		rcall lcd_wait_busy
+		rcall lcd_write_com
+
+		subi temp2, -10
+		push temp2
+	startPrint :
+		pop temp2
+		cp arrayIndex, temp2
+		breq exitPrint
+		push temp2
+
+		call readDataArray
+		mov data, arrayData
+		rcall lcd_wait_busy
+		rcall lcd_write_data
+	
+		inc arrayIndex
+
+		rjmp startPrint
+	exitPrint :
+
+		ldi ZH,  high(tempIndex)
+		ldi ZL,  low(tempIndex)
+		st Z, arrayIndex
+
+		push temp2
+
+		ldi ZH,  high(stationCounter)
+		ldi ZL,  low(stationCounter)
+		ld temp, Z
+		cpi temp, 3
+		breq done
+
+		ldi data, LCD_GO_TO_START_2ND_LINE
+		rcall lcd_wait_busy
+		rcall lcd_write_com	
+
+		ld arrayIndex, Z
+
+		call readDataArray
+		mov temp, arrayData
+		push temp2
+		mov temp2, arrayData
+		rcall writeNumber
+
+		ldi ZH,  high(tempIndex)
+		ldi ZL,  low(tempIndex)
+		ld arrayIndex, Z
+
+
+		ldi ZH,  high(stationCounter)
+		ldi ZL,  low(stationCounter)
+		ld temp, Z
+		inc temp
+		st Z, temp
+
+		ldi temp, 0
+		checkLoop:
+			cp temp, temp2
+			breq loopDone
+			rcall delaySec
+			inc temp
+			jmp checkLoop
+		loopDone:
+			pop temp2
+			jmp startAll
+	done:
+
+	jmp startLoop
+   */
 end: 
 
 rjmp end
@@ -845,6 +908,7 @@ ret ; return to caller
 // This function wraps "scan_for_key" and implements SMS-like
 // text input functionality - motherfucker.
 letter_input_wrapper:
+
    push ZH
    push ZL
    push temp
@@ -1100,5 +1164,143 @@ setPointerToStation:
 		pop temp
 		mov temp, stationNumber
 		pop temp
+
+ret
+
+InitData:
+	
+	ldi arrayIndex, 0 
+	ldi arrayData, 1
+	call writeDataToArray
+
+		ldi arrayIndex, 100
+		ldi arrayData, 'S'
+		call writeDataToArray
+
+		ldi arrayIndex, 101 
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 102 
+		ldi arrayData, 'a'
+		call writeDataToArray
+
+		ldi arrayIndex, 103
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 104
+		ldi arrayData, 'i'
+		call writeDataToArray
+
+		ldi arrayIndex, 105
+		ldi arrayData, 'o'
+		call writeDataToArray
+
+		ldi arrayIndex, 106
+		ldi arrayData, 'n'
+		call writeDataToArray
+
+		ldi arrayIndex, 107
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 108 
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 109 
+		ldi arrayData, '1'
+		call writeDataToArray
+
+	ldi arrayIndex, 1
+	ldi arrayData, 2
+	call writeDataToArray
+		
+		ldi arrayIndex, 110
+		ldi arrayData, 'S'
+		call writeDataToArray
+
+		ldi arrayIndex, 111 
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 112 
+		ldi arrayData, 'a'
+		call writeDataToArray
+
+		ldi arrayIndex, 113
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 114
+		ldi arrayData, 'i'
+		call writeDataToArray
+
+		ldi arrayIndex, 115
+		ldi arrayData, 'o'
+		call writeDataToArray
+
+		ldi arrayIndex, 116
+		ldi arrayData, 'n'
+		call writeDataToArray
+
+		ldi arrayIndex, 117
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 118 
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 119 
+		ldi arrayData, '2'
+		call writeDataToArray
+
+
+	ldi arrayIndex, 2 
+	ldi arrayData, 3
+	call writeDataToArray
+		
+		ldi arrayIndex, 120
+		ldi arrayData, 'S'
+		call writeDataToArray
+
+		ldi arrayIndex, 121 
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 122 
+		ldi arrayData, 'a'
+		call writeDataToArray
+
+		ldi arrayIndex, 123
+		ldi arrayData, 't'
+		call writeDataToArray
+
+		ldi arrayIndex, 124
+		ldi arrayData, 'i'
+		call writeDataToArray
+
+		ldi arrayIndex, 125
+		ldi arrayData, 'o'
+		call writeDataToArray
+
+		ldi arrayIndex, 126
+		ldi arrayData, 'n'
+		call writeDataToArray
+
+		ldi arrayIndex, 127
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 128 
+		ldi arrayData, '0'
+		call writeDataToArray
+
+		ldi arrayIndex, 129 
+		ldi arrayData, '3'
+		call writeDataToArray
+
 
 ret
