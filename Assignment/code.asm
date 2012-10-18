@@ -406,8 +406,20 @@ main:
 
 
    finishReadingString:
-push temp
-push temp2
+
+       ldi ZH, high(keysEntered)
+      ldi ZL, low(keysEntered)
+      ld temp, Z
+      
+      cpi temp, 0
+      brne continueRead
+
+         rjmp readAChar
+      continueRead :
+
+
+      push temp
+      push temp2
     ldi ZH, high(keysEntered)
     ldi ZL, low(keysEntered)
     ld temp, Z
