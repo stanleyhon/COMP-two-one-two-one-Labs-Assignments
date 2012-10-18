@@ -47,8 +47,16 @@ motorIsRunning: .byte 1
 stopTime: .byte 1
    .org 0x410
 stopNextStation: .byte 1
+	.org 0x412
+distance: .byte 1
+	.org 0x414
+tempDistance: .byte 1
+
+
    .org 0x100
 array: .byte 250 ; 100 x 1 byte numbers
+   .org 0x720
+keysEntered: .byte 1
 
    .org 0x780
 wrapperLastRead: .byte 1
@@ -160,6 +168,7 @@ units_query: .db "km"
 name_query: .db "Name: "
 distance_from_station_query_1: .db "dist from " // 10
 complete: .db "COMPLETE" // 8
+stationWait: .db "STOPTIME: " // 10
 
 
 main:
@@ -171,6 +180,12 @@ main:
    rcall lcd_wait_busy
    rcall lcd_write_com
 
+   // point Z at keysEntered
+   ldi ZH, high(keysEntered)
+   ldi ZL, low(keysEntered)
+   ldi temp, 0
+   st Z, temp
+
    ldi data, '!' // make sure not #
    readStationNum:
       rcall scan_for_key // read a key
@@ -179,7 +194,7 @@ main:
       // CURRENTLY ONLY ALLOWS 1 CHAR
       // This below needs to be replaced by a function
       cpi data, '#'
-      breq finishedReadingStationNumber
+      breq midJumpDigit
       cpi data, '1'
       breq correct
       cpi data, '2'
@@ -202,21 +217,123 @@ main:
       breq correct
       jmp readStationNum
       correct:
+      
+      // point Z at keysEntered
+      ldi ZH, high(keysEntered)
+      ldi ZL, low(keysEntered)
+      ld temp, Z
+      
+      cpi temp, 2
+      breq clearScreenAndReread
+      
+      cpi temp, 1
+      brne writeDigitToScreen
+
+      ldi ZH, high (numberOfStations)
+      ldi ZL, low (numberOfStations)
+      ld temp, Z
+      cpi temp, 1
+      brne clearScreenAndReread
+
+      subi data, '0'
+      cpi data, 0
+      brne clearScreenAndReread
+      
+      subi data, -'0'
+      //digit is ten
       rcall lcd_wait_busy
       rcall lcd_write_data
 
       ldi ZH, high (numberOfStations)
       ldi ZL, low (numberOfStations)
-      subi data, '0'
+      ldi data, 10
       st Z, data
+      
+      ldi ZH, high(keysEntered)
+      ldi ZL, low(keysEntered)
+      ld temp, Z
+      inc temp
+      st Z, temp
+
+      rjmp readStationNum
+
+      
+      midJumpDigit:
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ld temp, Z
+         cpi temp, 0
+         brne skipEnd
+               rcall readStationNum
+         skipEnd :
+
+         rjmp finishedReadingStationNumber
+
+      clearScreenAndReread:
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ldi temp, 0
+         st Z, temp
+
+         
+         ldi data, LCD_DISP_CLR
+         rcall lcd_wait_busy
+         rcall lcd_write_com
+      
+         rcall lcd_wait_busy
+         rcall lcd_write_number_of_stations_query 
+         // Go to new line
+         ldi data, LCD_GO_TO_START_2ND_LINE
+         rcall lcd_wait_busy
+         rcall lcd_write_com
+
+         rjmp readStationNum
+
+
+      writeDigitToScreen:
+         rcall lcd_wait_busy
+         rcall lcd_write_data
+
+         ldi ZH, high (numberOfStations)
+         ldi ZL, low (numberOfStations)
+         subi data, '0'
+         st Z, data
+
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ld temp, Z
+         inc temp
+         st Z, temp
+
+         rjmp readStationNum
+
 
    finishedReadingStationNumber:
+   
 
+   ldi ZH, high (numberOfStations)
+   ldi ZL, low (numberOfStations)
+   ld temp, Z
+   cpi temp, 1
+   breq clearScreenAndReread
+   cpi temp, 0
+   breq clearScreenAndReread
+
+//-----------------------------------------------------------------
+//CLEAN SHIT
+
+   ldi ZH, high(keysEntered)
+   ldi ZL, low(keysEntered)
+   ldi temp, 0
+   st Z, temp
 
    ldi data, LCD_DISP_CLR
    rcall lcd_wait_busy
    rcall lcd_write_com
    // 2. Loop and find out names for all stations
+
+//-----------------------------------------------------------------
+//START READING STATION NAMES
 
    ldi temp2, 0 // temp2 counts the one we're up to
    ldi arrayIndex, 100
@@ -238,20 +355,90 @@ main:
          cpi data, '#'
          breq finishReadingString
 
-         cpi data, '*'
-         breq dontWriteToArrayInPhase2
          push temp2
-         // WRITE THIS CHARACTER IN
+         
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ld temp, Z
+
+         cpi temp, 10
+         breq clearLetterScreen
+
          mov arrayData, data
          rcall writeDataToArray
          inc arrayIndex
-         // TODO: 10 CHARACTER LIMIT
-         dontWriteToArrayInPhase2:
+         
+         
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ld temp, Z
+         inc temp
+         st Z, temp
+
          // TODO: Implement 10 chracter limit.
          jmp readAChar
-         
+   
+
+   clearLetterScreen :
+      ldi ZH, high(keysEntered)
+      ldi ZL, low(keysEntered)
+      ldi temp, 0
+      st Z, temp
+
+      subi arrayIndex, 10
+      rcall clearSectionOfMemory      
+
+      ldi data, LCD_DISP_CLR
+      rcall lcd_wait_busy
+      rcall lcd_write_com
+   
+
+        //TODO clear mem
+      mov data, temp2 // put the one we're up to
+      rcall lcd_wait_busy
+      rcall lcd_write_name_station_in_data 
+      // Go to new line
+      ldi data, LCD_GO_TO_START_2ND_LINE
+      rcall lcd_wait_busy
+      rcall lcd_write_com
+
+      rjmp readAChar     
+
 
    finishReadingString:
+push temp
+push temp2
+    ldi ZH, high(keysEntered)
+    ldi ZL, low(keysEntered)
+    ld temp, Z
+     
+
+   ldi arrayData, ' '
+
+    ldi temp2, 10
+    startRead :
+    cp temp, temp2
+    breq doneRead
+
+      inc arrayIndex
+      inc temp
+      
+
+      rcall writeDataToArray
+      
+
+      rjmp startRead
+    doneRead :
+
+ pop temp2
+ pop temp
+
+
+
+   ldi ZH, high(keysEntered)
+   ldi ZL, low(keysEntered)
+   ldi temp, 0
+   st Z, temp
 
    ldi data, LCD_DISP_CLR
    rcall lcd_wait_busy
@@ -269,6 +456,13 @@ main:
    /*******************************************************/
    // 3. Loop and find out distances between all stations
    /*******************************************************/
+
+   // point Z at keysEntered
+   ldi ZH, high(keysEntered)
+   ldi ZL, low(keysEntered)
+   ldi temp, 0
+   st Z, temp
+
    ldi arrayIndex, 0 // distances are 0-10
    ldi ZH, high(distanceFromStation)
    ldi ZL, low(distanceFromStation)
@@ -293,10 +487,21 @@ main:
       rcall lcd_wait_busy
       rcall lcd_write_ask_distance_from_data
 
+      ldi ZH, high(tempDistance)
+      ldi ZL, low(tempDistance)
+      st Z, temp2
+
+
       // Go to new line
       ldi data, LCD_GO_TO_START_2ND_LINE
       rcall lcd_wait_busy
       rcall lcd_write_com
+
+
+      ldi ZH, high(distance)
+      ldi ZL, low(distance)
+      ldi temp, 0
+      st Z, temp
 
       readNextChar:
 
@@ -306,7 +511,7 @@ main:
       // CURRENTLY ONLY ALLOWS 1 CHAR
       // This below needs to be replaced by a function
       cpi data, '#'
-      breq finishReadingDistance
+      breq midFinishReadingDistance
       cpi data, '1'
       breq correctDistance
       cpi data, '2'
@@ -327,25 +532,131 @@ main:
       breq correctDistance
       cpi data, '0'
       breq correctDistance
-      jmp askForDistance
+      jmp readNextChar
       correctDistance:
-         push data
+
+          // point Z at keysEntered
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ld temp, Z
+      
+         cpi temp, 2
+         breq clearScreenAndReread2
+      
+         cpi temp, 1
+         brne writeDigitToScreen2
+
+         ldi ZH, high (distance)
+         ldi ZL, low (distance)
+         ld temp, Z
+         cpi temp, 1
+         brne clearScreenAndReread2
+
+         subi data, '0'
+         cpi data, 0
+         brne clearScreenAndReread2
+      
+         subi data, -'0'
+         //digit is ten
          rcall lcd_wait_busy
          rcall lcd_write_data
-         pop data
-         subi data, '0' // translate to integer
+
+
+         ldi ZH, high (distance)
+         ldi ZL, low (distance)
+         ldi data, 10
+         st Z, data
+      
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ld temp, Z
+         inc temp
+         st Z, temp
+
+         rjmp readNextChar
+
+      midFinishReadingDistance:
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ld temp, Z
+         cpi temp, 0
+         brne checkNext
+             rjmp readNextChar
+
+         checkNext :
+
+               ldi ZH, high(distance)
+               ldi ZL, low(distance)
+               ld temp, Z
+               cpi temp, 0
+               brne skipJumpBack
+                  rjmp clearScreenAndReread2
+         skipJumpBack:
+            rjmp finishReadingDistance
+      
+
+      clearScreenAndReread2:
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ldi temp, 0
+         st Z, temp
          
-         mov arrayData, data
-         rcall writeDataToArray
-         inc arrayIndex
+         ldi ZH, high(distance)
+         ldi ZL, low(distance)
+         ldi temp, 0
+         st Z, temp
+         
+         ldi data, LCD_DISP_CLR
+         rcall lcd_wait_busy
+         rcall lcd_write_com
+      
+         ldi ZH, high(tempDistance)
+         ldi ZL, low(tempDistance)
+         ld data, Z
 
-         jmp readNextChar
-      // WRITE THE DISTNACE IN DATA TO ARRAY
+         rcall lcd_wait_busy
+         rcall lcd_write_ask_distance_from_data
 
-      // TODO: IMPLEMENT WRONG INPUT
+         // Go to new line
+         ldi data, LCD_GO_TO_START_2ND_LINE
+         rcall lcd_wait_busy
+         rcall lcd_write_com
+
+         
+         rjmp readNextChar
+
+
+      writeDigitToScreen2:
+         rcall lcd_wait_busy
+         rcall lcd_write_data
+
+         ldi ZH, high (distance)
+         ldi ZL, low (distance)
+         subi data, '0'
+         st Z, data
+
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ld temp, Z
+         inc temp
+         st Z, temp
+
+         rjmp readNextChar
 
 
       finishReadingDistance:
+
+         ldi ZH, high (distance)
+         ldi ZL, low (distance)
+         ld arrayData, Z
+         rcall writeDataToArray
+         inc arrayIndex
+
+         ldi ZH, high(keysEntered)
+         ldi ZL, low(keysEntered)
+         ldi temp, 0
+         st Z, temp         
+
          // see if we need to ask again.
          ldi ZH, high(numberOfStations)
          ldi ZL, low(numberOfStations)
@@ -363,38 +674,114 @@ main:
          ldi data, LCD_DISP_CLR
          rcall lcd_wait_busy
          rcall lcd_write_com
+   // *********************************
+   // PHASE 4 - ASK FOR STATION STOP TIME
+      // 1. Ask for number of stations
+   rcall lcd_wait_busy
+   rcall lcd_ask_wait
+   // Go to new line
+   ldi data, LCD_GO_TO_START_2ND_LINE
+   rcall lcd_wait_busy
+   rcall lcd_write_com
+
+   ldi data, '!' // make sure not !
+   ldi ZH, high (stopTime)
+   ldi ZL, low (stopTime)
+   st Z, data
+
+   readWaitNum:
+      rcall scan_for_key // read a key
+      // TODO: Only allow 1-10
+      // TODO: ALLOW 10
+      // CURRENTLY ONLY ALLOWS 1 CHAR
+      // This below needs to be replaced by a function
+      cpi data, '#'
+      breq midJumpDigitWait
+      cpi data, '2'
+      breq correctWait
+      cpi data, '3'
+      breq correctWait
+      cpi data, '4'
+      breq correctWait
+      cpi data, '5'
+      breq correctWait
+      jmp readWaitNum
       
-   // 4. Show configuration complete page.
+      correctWait:
+      
+      push data
+      ldi data, LCD_GO_TO_START_2ND_LINE
+      rcall lcd_wait_busy
+      rcall lcd_write_com
+      pop data
+
+      rcall lcd_wait_busy
+      rcall lcd_write_data
+
+      ldi ZH, high (stopTime)
+      ldi ZL, low (stopTime)
+      subi data, '0'
+      st Z, data
+
+      rjmp readWaitNum
+         
+      
+      midJumpDigitWait:
+         ldi ZH, high (stopTime)
+         ldi ZL, low (stopTime)
+         ld data, Z
+         cpi data, '!'
+         breq readWaitNum
+
+         rjmp finishedReadingWait
+
+   finishedReadingWait:
+
+//-----------------------------------------------------------------
+//CLEAN SHIT
+
+   ldi data, LCD_DISP_CLR
+   rcall lcd_wait_busy
+   rcall lcd_write_com 
+
+   // 5. Show configuration complete page.
    rcall lcd_write_complete
 
-/*
-   ldi temp, 5
-   push temp
+
+   ldi temp2, 5
+   push temp2
    startDelaySec:
-      pop temp
-      cpi temp, 0
+      pop temp2
+      cpi temp2, 0
       breq skipDelaySec
-      push temp
-      rcall delaySec
-      
-      
+      push temp2
+
       ldi data, LCD_GO_TO_START_2ND_LINE
       rcall lcd_wait_busy
       rcall lcd_write_com
       
-
+      pop temp2
+      mov temp, temp2
       rcall lcd_wait_busy
-      pop temp
       rcall writeNumber
+      push temp2
 
-      dec temp
-      push temp
+      rcall delaySec
+
+
+      pop temp2
+      dec temp2
+      push temp2
       jmp startDelaySec
    skipDelaySec :   
-*/
+
+
+
    ldi data, LCD_DISP_CLR
    rcall lcd_wait_busy
    rcall lcd_write_com
+
+
 
  // CTL CODE
 
@@ -449,14 +836,6 @@ out TCCR0, temp
 //==============================================================
 
 
-
-
-
-
-	ldi ZH,  high(stopTime)
-	ldi ZL,  low(stopTime)
-	ldi temp, 2
-	st Z, temp
 
 
 	startLoop:
@@ -730,9 +1109,25 @@ delayCTL: //3 cycles
 	subi del_lo, 3
 	sbci del_hi, 0
 
-	nop
-	nop
-	nop
+nop
+nop
+nop
+
+/*
+in temp, PIND
+      andi temp, 0b00100001 //hash
+      cpi temp, 0b00100001
+      brne skipInterrupt
+         in temp, DDRE
+         push temp
+         ldi temp, 0b00000010
+         out DDRE, temp
+         ser temp
+         out PORTE, temp
+         pop temp
+         out DDRE, temp
+      skipInterrupt :
+*/
 
 	loop:
 		subi del_lo, 1
@@ -752,6 +1147,8 @@ delaySec:
 	push temp2
 	ldi temp2, 37
 	delayloop :
+
+
 		ldi del_lo, low(50000)
 		ldi del_hi, high(50000)
 		rcall delayCTL
@@ -1402,6 +1799,29 @@ writeName:
 	pop temp
 ret
 
+lcd_ask_wait:
+	push temp // keep track of how many we've written
+	push data
+	ldi temp, 10
+	// According to 
+	// http://www.cse.unsw.edu.au/~cs2121/ExampleCode/lcd.asm
+	// we need to multiply it by 2...
+	ldi ZL, low(stationWait << 1) 
+	ldi ZH, high(stationWait << 1)
+
+	write_anotherCtl6:
+		lpm data, Z+
+		push temp
+		rcall lcd_wait_busy
+		rcall lcd_write_data
+		pop temp
+		dec temp
+	brne write_anotherCtl6
+
+	pop data
+	pop temp
+ret
+
 /********************************************************************/
 /********** LCD FUNCTIONS ABOVE THIS POINT **************************/
 /********************************************************************/
@@ -1410,6 +1830,12 @@ ret
 /********** KEYPAD CODE BELOW THIS POINT ****************************/
 /********************************************************************/
 
+/*
+.equ PORTDDIR = 0xF0 1111 0000
+.equ INITCOLMASK = 0xEF 1110 1111
+.equ INITROWMASK = 0x01 0000 0001
+.equ ROWMASK = 0x0F 0000 1111
+*/
 scan_for_key:
 ldi mask, INITCOLMASK ; initial column mask
 clr col ; initial column
@@ -1595,6 +2021,16 @@ letter_input_wrapper:
       cpi data, '#' // If someone pressed a hash, pass it straight through
       breq quitLetterInputMidJump
 
+      ldi ZH, high(keysEntered)
+      ldi ZL, low(keysEntered)
+      ld temp, Z
+      cpi temp, 10
+      brne skipLetterRet
+         ldi data, '*'
+         rjmp quitLetterInputMidJump
+     
+      skipLetterRet:
+
       // So we're reading something now, grab what it was.
       ldi ZH, high(wrapperStorage)
       ldi ZL, low(wrapperStorage)
@@ -1663,6 +2099,10 @@ letter_input_wrapper:
          brne not7
          ldi data, 'P'
          add data, temp2
+         cpi temp2, 1
+         breq skipQ
+            inc data
+         skipQ:
          dec data
          not7:
 
@@ -1684,6 +2124,11 @@ letter_input_wrapper:
          brne not0
          ldi data, 'Z'
          not0:
+
+         cpi data, '1'
+         brne not1
+         ldi data, 'Q'
+         not1:
 
          cpi data, '*'
          brne notAstrisk
@@ -1742,6 +2187,50 @@ ret
 /********************************************************************/
 /********** ARRAY MANIPULATION CODE *********************************/
 /********************************************************************/
+clearSectionOfMemory:
+   push temp
+   push arrayIndex
+   push arrayData
+
+   ldi arrayData, ' '
+
+   ldi temp, 0
+   clearBit :
+      cpi temp, 10 
+      breq skipWriteToArray
+      rcall writeDataToArray
+      inc temp
+      inc arrayIndex
+      jmp clearBit
+   
+   skipWriteToArray :
+   pop arrayData
+   pop arrayIndex
+   pop temp
+ret
+
+clearArray:
+   push temp
+   push arrayIndex
+   push arrayData
+
+   ldi arrayData, ' '
+
+   ldi temp, 0
+   clearBit2 :
+      cpi temp, 250 
+      breq skipWriteToArray2
+      rcall writeDataToArray
+      inc temp
+      inc arrayIndex
+      jmp clearBit2
+   
+   skipWriteToArray2 :
+   pop arrayData
+   pop arrayIndex
+   pop temp
+ret
+
 writeDataToArray:
 	push temp
 	push r26
@@ -2050,4 +2539,6 @@ InitData:
 		ldi arrayData, '5'
 		call writeDataToArray
 
+
+      rcall clearArray
 ret
