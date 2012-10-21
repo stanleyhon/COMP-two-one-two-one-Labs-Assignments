@@ -1,13 +1,18 @@
+// Written by Stanley Hon & Christopher Tin-Loi 
+// For Assignment 2 COMP2121 2012s2
+// 21/10/2012
+
 // Cabling:
 // KEYPAD      -> PD0-PD7
 // LCD         -> PC0-PC7
 // LCD CONTROL -> PA0-PA4
-// PB1         -> doubled up on PD0
 // Motor       -> PB4
+// INT4        -> 
+// INT7        ->            NOTE: BEWARE PE2-PE7 are reversed on our boards.
 
 .include "m64def.inc"
 .def temp = r16
-.
+
 .def temp2 = r26
 .def orig = r17 // dupe used for writeNumber
 .def row = r17 // dupe used for row for keypad polling
@@ -15,7 +20,6 @@
 .def del_lo = r19
 .def arrayIndex = r19
 .def stationNumber = r19
-// .def count = r27 // dupe used for polling keypad
 .def del_hi = r20
 .def arrayData = r20
 .def counter = r21
@@ -23,6 +27,7 @@
 .def counter3 = r23
 .def data = r24 // Used in LCD Functions
 .def mask = r25 // Keypad polling related
+
 ;.def var = r26 x // used above
 ;.def var = r27 x // used above
 ;.def var = r28 y
@@ -31,30 +36,39 @@
 .def keypadMode = r31
 
 .dseg
-   .org 0x690
-wrapperStorage: .byte 1
-   .org 0x700
-wrapperPreviousChar: .byte 1
+   .org 0x100
+array: .byte 250 ; 100 x 1 byte numbers
+
 	.org 0x400
 numberOfStations: .byte 1
+
 	.org 0x402
 stationCounter: .byte 1
+
    .org 0x404
 tempIndex: .byte 1
+
    .org 0x406
 motorIsRunning: .byte 1
+
    .org 0x408
 stopTime: .byte 1
+
    .org 0x410
 stopNextStation: .byte 1
+
 	.org 0x412
 distance: .byte 1
+
 	.org 0x414
 tempDistance: .byte 1
 
+   .org 0x690
+wrapperStorage: .byte 1
 
-   .org 0x100
-array: .byte 250 ; 100 x 1 byte numbers
+   .org 0x700
+wrapperPreviousChar: .byte 1
+
    .org 0x720
 keysEntered: .byte 1
 
@@ -86,7 +100,6 @@ jmp Timer0 ; Timer0 Overflow Handler
 
 
 // LCD FUNCTION RELATED 
-
 ;LCD protocol control bits
 .equ LCD_RS = 3
 .equ LCD_RW = 1
@@ -101,14 +114,12 @@ jmp Timer0 ; Timer0 Overflow Handler
 
 .equ LCD_CURSOR_GO_BACK_1 = 0b00010000 // 00 means, send cursor back 1. (after the 1) 
 .equ LCD_CURSOR_GO_FORW_1 = 0b00010100 // 
+
 // keypadRead modes
 .equ LETTER_MODE = 1
 .equ NUMBER_MODE = 2
 
-
-.equ LCD_GO_TO_START_2ND_LINE = 0b11000000 // 0100 0000 is 41
-										   // 8th bit is meant to be a 1
-										   // lcd_write_com automatically writes 0,0 to rs rw
+.equ LCD_GO_TO_START_2ND_LINE = 0b11000000
 .equ LCD_GO_TO_START_1ST_LINE = 0b10000000
 
 ;LCD function bits and constants
@@ -127,7 +138,6 @@ jmp Timer0 ; Timer0 Overflow Handler
 .equ INITCOLMASK = 0xEF
 .equ INITROWMASK = 0x01
 .equ ROWMASK = 0x0F
-
 
 Default:
 reti
@@ -150,11 +160,9 @@ ldi data, LCD_DISP_CLR
 rcall lcd_write_com ; Clear Display
 rcall lcd_wait_busy ; Wait until the LCD is ready
 
-
 // KEYPAD
 ldi temp, PORTDDIR ; columns are outputs, rows are inputs
 out DDRD, temp
-
 
 call InitData
 sei
@@ -170,9 +178,10 @@ distance_from_station_query_1: .db "dist from " // 10
 complete: .db "COMPLETE" // 8
 stationWait: .db "STOPTIME: " // 10
 
-
 main:
+   /*******************************************************/
    // 1. Ask for number of stations
+   /*******************************************************/
    rcall lcd_wait_busy
    rcall lcd_write_number_of_stations_query 
    // Go to new line
@@ -319,8 +328,7 @@ main:
    cpi temp, 0
    breq clearScreenAndReread
 
-//-----------------------------------------------------------------
-//CLEAN SHIT
+   // Clean up.
 
    ldi ZH, high(keysEntered)
    ldi ZL, low(keysEntered)
@@ -330,18 +338,17 @@ main:
    ldi data, LCD_DISP_CLR
    rcall lcd_wait_busy
    rcall lcd_write_com
+   
+   /*******************************************************/
    // 2. Loop and find out names for all stations
-
-//-----------------------------------------------------------------
-//START READING STATION NAMES
-
-   ldi temp2, 0 // temp2 counts the one we're up to
+   /*******************************************************/
+   ldi temp2, 0 // temp2 counts the one were up to
    ldi arrayIndex, 100
 
    readAName:
 
    inc temp2
-   mov data, temp2 // put the one we're up to
+   mov data, temp2 // put the one were up to
    rcall lcd_wait_busy
    rcall lcd_write_name_station_in_data
    // Go to new line
@@ -394,7 +401,7 @@ main:
    
 
         //TODO clear mem
-      mov data, temp2 // put the one we're up to
+      mov data, temp2 // put the one were up to
       rcall lcd_wait_busy
       rcall lcd_write_name_station_in_data 
       // Go to new line
@@ -445,8 +452,6 @@ main:
  pop temp2
  pop temp
 
-
-
    ldi ZH, high(keysEntered)
    ldi ZL, low(keysEntered)
    ldi temp, 0
@@ -459,7 +464,7 @@ main:
    ldi ZH, high(numberOfStations)
    ldi ZL, low(numberOfStations)
    ld temp, Z // number of stations stored in temp
-   cp temp, temp2 // see if we've done enough 
+   cp temp, temp2 // see if weve done enough 
    breq finishReadingNames
 
    jmp readAName
@@ -478,7 +483,7 @@ main:
    ldi arrayIndex, 0 // distances are 0-10
    ldi ZH, high(distanceFromStation)
    ldi ZL, low(distanceFromStation)
-   ldi temp2, 0 // temp counts the one we're going from
+   ldi temp2, 0 // temp counts the one were going from
    st Z, temp2
    
    askForDistance:
@@ -686,8 +691,10 @@ main:
          ldi data, LCD_DISP_CLR
          rcall lcd_wait_busy
          rcall lcd_write_com
+         
    // *********************************
    // PHASE 4 - ASK FOR STATION STOP TIME
+   // *********************************
       // 1. Ask for number of stations
    rcall lcd_wait_busy
    rcall lcd_ask_wait
@@ -749,9 +756,10 @@ main:
 
    finishedReadingWait:
 
-//-----------------------------------------------------------------
-//CLEAN SHIT
-
+   //-----------------------------------------------------------------
+   //CLEAN UP
+   //-----------------------------------------------------------------
+   
    ldi data, LCD_DISP_CLR
    rcall lcd_wait_busy
    rcall lcd_write_com 
@@ -780,22 +788,15 @@ main:
 
       rcall delaySec
 
-
       pop temp2
       dec temp2
       push temp2
       jmp startDelaySec
    skipDelaySec :   
 
-
-
    ldi data, LCD_DISP_CLR
    rcall lcd_wait_busy
    rcall lcd_write_com
-
-
-
- // CTL CODE
 
 //================================================================
 
@@ -841,15 +842,7 @@ CS00 = Prescaler = 8
 */
 out TCCR0, temp
 
-
-
-
-
 //==============================================================
-
-
-
-
 	startLoop:
 
 		ldi ZH,  high(stationCounter)
@@ -998,8 +991,6 @@ out TCCR0, temp
 			jmp done
 		skipDoneFUCK :
 
-
-
 		startMotorAndLed:
 
 			ldi temp, (0<<INT6) | (1<<INT7) 
@@ -1022,7 +1013,6 @@ out TCCR0, temp
 			ldi temp, 0
 			out OCR0, temp
 
-
 		stopAtStation:
 
 			ldi data, LCD_DISP_CLR
@@ -1031,8 +1021,7 @@ out TCCR0, temp
 			
 			rcall lcd_wait_busy
 			rcall writeStopped
-
-			
+		
 			ldi ZH,  high(stationCounter)
 			ldi ZL,  low(stationCounter)
 			ld temp, Z
@@ -1062,7 +1051,6 @@ out TCCR0, temp
 			cpi temp2, 0
 			breq skipStop
 				
-
 				push temp
 				push temp2
 				ldi ZH,  high(stopTime)
@@ -1096,7 +1084,6 @@ out TCCR0, temp
 			ldi temp, (0<<TOIE0) ; =278 microseconds
 			out TIMSK, temp ; T/C0 interrupt disable
 
-
 			ldi temp, 1
 			ldi ZH,  high(motorIsRunning)
 			ldi ZL,  low(motorIsRunning)
@@ -1125,22 +1112,6 @@ nop
 nop
 nop
 
-/*
-in temp, PIND
-      andi temp, 0b00100001 //hash
-      cpi temp, 0b00100001
-      brne skipInterrupt
-         in temp, DDRE
-         push temp
-         ldi temp, 0b00000010
-         out DDRE, temp
-         ser temp
-         out PORTE, temp
-         pop temp
-         out DDRE, temp
-      skipInterrupt :
-*/
-
 	loop:
 		subi del_lo, 1
 		sbci del_hi, 0 //2 cycle
@@ -1151,7 +1122,6 @@ in temp, PIND
 	pop del_lo
 
 ret //4 cycles
-
 
 delaySec:
 	push del_lo
@@ -1218,11 +1188,9 @@ stop:
 		out PORTA, temp
 		rcall delayQuartSec
 
-
 		pop temp2
 		subi temp2, 1
 	brne delayloop3
-
 	
 	pop temp
 	out DDRA, temp
@@ -1250,7 +1218,6 @@ EXT_INT6:
 		ldi counter2,0
 		ldi counter3,0
 
-
 		ldi temp, 0
 		ldi ZH,  high(motorIsRunning)
 		ldi ZL,  low(motorIsRunning)
@@ -1265,7 +1232,6 @@ EXT_INT6:
 
 		ldi temp, (0<<TOIE0) ; =278 microseconds
 		out TIMSK, temp ; T/C0 interrupt disable
-
 
 		ldi temp, 1
 		ldi ZH,  high(motorIsRunning)
@@ -1311,14 +1277,14 @@ in temp, SREG
 push temp
 push temp2
 
-; HOWEVER: to avoid complication of dividing by 4, we can interrupt every 1/4 of a second. 899.25 interrupts per 1/4 second
 cpi counter, 99 ; counting for 99
 brne notsecond
  
 cpi counter2, 8 ; counting for 8
 brne secondloop ; jumping into count 100
 
-outmot: ldi counter,0 ; clearing the counter values after counting 3597 interrupts which gives us one second
+outmot: ldi counter,0 ; clearing the counter values after counting 
+                     // 3597 interrupts which gives us one second
         ldi counter2,0
         ldi counter3,0
 
@@ -1404,7 +1370,7 @@ ret
 
 //Function lcd_write_com: Write a command to the LCD. The data reg stores the value to be written.
 lcd_write_com:
-	out PORTC, data ; set the data port's value up
+	out PORTC, data ; set the data ports value up
 	clr temp
 	out PORTA, temp ; RS = 0, RW = 0 for a command write
 	nop ; delay to meet timing (Set up time)
@@ -1423,7 +1389,7 @@ ret
 
 ;Function lcd_write_data: Write a character to the LCD. The data reg stores the value to be written.
 lcd_write_data:
-	out PORTC, data ; set the data port's value up
+	out PORTC, data ; set the data ports value up
 	ldi temp, 1 << LCD_RS
 	out PORTA, temp ; RS = 1, RW = 0 for a data write
 	nop ; delay to meet timing (Set up time)
@@ -1471,7 +1437,7 @@ ret ; and return
 // Writes "Please type the maximum number of stations: " to the screen on two lines
 // 44 chars
 lcd_write_number_of_stations_query:
-	push temp // keep track of how many we've written
+	push temp // keep track of how many weve written
 	ldi temp, 10
 	push data
 	push ZL
@@ -1501,7 +1467,7 @@ ret
 // Put a number into data, writes 
 // "name stat X:"
 lcd_write_name_station_in_data:
-	push temp // keep track of how many we've written
+	push temp // keep track of how many weve written
 	ldi temp, 10
 	push data
 	push ZL
@@ -1541,7 +1507,7 @@ ret
 
 // Writes COMPLETE
 lcd_write_complete:
-	push temp // keep track of how many we've written
+	push temp // keep track of how many weve written
 	ldi temp, 8
 
 	// According to 
@@ -1565,7 +1531,7 @@ ret
 
 // Ask for distance from the station in data
 lcd_write_ask_distance_from_data:
-	push temp // keep track of how many we've written
+	push temp // keep track of how many weve written
 	ldi temp, 10 // second thing is 3
 	push ZL
 	push ZH
@@ -1719,7 +1685,7 @@ writeNumber:
 ret
 
 writeStopped:
-	push temp // keep track of how many we've written
+	push temp // keep track of how many weve written
 	push data
 	ldi temp, 14
 	// According to 
@@ -1742,7 +1708,7 @@ writeStopped:
 ret
 
 writeTravelling:
-	push temp // keep track of how many we've written
+	push temp // keep track of how many weve written
 	push data
 	ldi temp, 11
 	// According to 
@@ -1765,7 +1731,7 @@ writeTravelling:
 ret
 
 writeKm:
-	push temp // keep track of how many we've written
+	push temp // keep track of how many weve written
 	push data
 	ldi temp, 2
 	// According to 
@@ -1789,7 +1755,7 @@ ret
 
 
 writeName:
-	push temp // keep track of how many we've written
+	push temp // keep track of how many weve written
 	push data
 	ldi temp, 6
 	// According to 
@@ -1812,7 +1778,7 @@ writeName:
 ret
 
 lcd_ask_wait:
-	push temp // keep track of how many we've written
+	push temp // keep track of how many weve written
 	push data
 	ldi temp, 10
 	// According to 
@@ -2011,8 +1977,8 @@ letter_input_wrapper:
    ldi data, '!'
    st Z, data // store an initial character
 
-   ldi temp2, 0 // Temp2 indicates if we've already printed something, 
-   // e.g. we're cycling through something.
+   ldi temp2, 0 // Temp2 indicates if weve already printed something, 
+   // e.g. were cycling through something.
 
    // temp is used to store what we read in the last turn 
    // through memory access
@@ -2043,14 +2009,14 @@ letter_input_wrapper:
      
       skipLetterRet:
 
-      // So we're reading something now, grab what it was.
+      // So were reading something now, grab what it was.
       ldi ZH, high(wrapperStorage)
       ldi ZL, low(wrapperStorage)
       ld temp, Z // grab what we previously read
 
-      // compare it to what we've gotten
+      // compare it to what weve gotten
       cp temp, data
-      breq pressedAgain // if they're equal - we pressed again.
+      breq pressedAgain // if theyre equal - we pressed again.
       // else user pressed a new thing.
       ldi temp2, 0
       st Z, data // remember what it was we were reading
@@ -2060,16 +2026,16 @@ letter_input_wrapper:
          // manual modulo it, to find out which letter we want
          // To modulo:
          // if > 3, subtract 3
-         // that's it.
+         // thats it.
          cpi temp2, 4
          brne dontSubtract
-         ldi temp2, 1 // I know it's 4, so 4-3 = 1
+         ldi temp2, 1 // I know its 4, so 4-3 = 1
          dontSubtract:
 
-         cpi data, '2' // here's my huge IF statement
+         cpi data, '2' // heres my huge IF statement
          brne not2
          ldi data, 'A'
-         add data, temp2 // temp2 stores how many times u've pressed it
+         add data, temp2 // temp2 stores how many times uve pressed it
          dec data // subtract, because 1 instance of '1' is A not B.
          not2:
 
@@ -2165,8 +2131,8 @@ letter_input_wrapper:
             st Z, data
 
 
-         // The above don't need escapes because they are all guarded.
-         // Draw this character to the LCD, but don't increment the pointer
+         // The above dont need escapes because they are all guarded.
+         // Draw this character to the LCD, but dont increment the pointer
          push temp2
          rcall lcd_wait_busy
          rcall lcd_write_data// so write over whatever we have.
@@ -2335,7 +2301,7 @@ InitData:
 	call writeDataToArray
 
 		ldi arrayIndex, 100
-		ldi arrayData, 'S'
+		ldi arrayData, 's'
 		call writeDataToArray
 
 		ldi arrayIndex, 101 
@@ -2379,7 +2345,7 @@ InitData:
 	call writeDataToArray
 		
 		ldi arrayIndex, 110
-		ldi arrayData, 'S'
+		ldi arrayData, 's'
 		call writeDataToArray
 
 		ldi arrayIndex, 111 
@@ -2424,7 +2390,7 @@ InitData:
 	call writeDataToArray
 		
 		ldi arrayIndex, 120
-		ldi arrayData, 'S'
+		ldi arrayData, 's'
 		call writeDataToArray
 
 		ldi arrayIndex, 121 
@@ -2468,7 +2434,7 @@ InitData:
 	call writeDataToArray
 		
 		ldi arrayIndex, 130
-		ldi arrayData, 'S'
+		ldi arrayData, 's'
 		call writeDataToArray
 
 		ldi arrayIndex, 131 
@@ -2512,7 +2478,7 @@ InitData:
 	call writeDataToArray
 		
 		ldi arrayIndex, 140
-		ldi arrayData, 'S'
+		ldi arrayData, 's'
 		call writeDataToArray
 
 		ldi arrayIndex, 141 
@@ -2550,7 +2516,6 @@ InitData:
 		ldi arrayIndex, 149 
 		ldi arrayData, '5'
 		call writeDataToArray
-
 
       rcall clearArray
 ret
